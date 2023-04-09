@@ -5,9 +5,16 @@ import pygame
 import src.utils as utils
 
 GAME_TITLE = "Containment"
-PARTICLE_VELOCITY = 100
-DECAY_RATE = 0.1
-PARTICLE_DURATION = 1
+LEVEL_DIR = "levels"
+
+AMBIENT_ENERGY_DECAY_RATE = 0.1
+
+SPAWN_RATE = 50
+PARTICLE_DURATION = 5
+
+PARTICLE_VELOCITY = 10
+PARTICLE_ENERGY = 100
+ENERGY_TRANSFER_ON_COLLISION = 0.1
 
 class ParticleArray:
 
@@ -24,6 +31,7 @@ class ParticleArray:
         self.ay = numpy.zeros((cap,), dtype=numpy.float16)
 
         self.t = numpy.zeros((cap,), dtype=numpy.float16)
+        self.energy = numpy.zeros((cap,), dtype=numpy.float16)
 
     def clear(self, new_cap=128):
         self.n = 0
@@ -82,6 +90,7 @@ class ParticleArray:
         self.ax = numpy.resize(self.ax, (cap,))
         self.ay = numpy.resize(self.ay, (cap,))
         self.t = numpy.resize(self.t, (cap,))
+        self.energy = numpy.resize(self.energy, (cap,))
 
     def add_particle(self, xy, velocity=None):
         cap = self.get_capacity()
@@ -103,6 +112,7 @@ class ParticleArray:
         self.ax[idx] = 0
         self.ay[idx] = 0
         self.t[idx] = 0
+        self.energy[idx] = PARTICLE_ENERGY
         self.n += 1
 
     def __repr__(self):
@@ -111,16 +121,16 @@ class ParticleArray:
 
 class ParticleEmitter:
 
-    def __init__(self, xy, spawnrate):
+    def __init__(self, xy, weight=1):
         self.xy = xy
-        self.spawnrate = spawnrate
+        self.weight = weight
 
         self.accum_t = 0
 
-    def update(self, dt, level):
+    def update(self, dt, rate, level):
         self.accum_t += dt
-        n_to_spawn = int(self.spawnrate * self.accum_t)
-        self.accum_t -= n_to_spawn / self.spawnrate
+        n_to_spawn = int(rate * self.accum_t)
+        self.accum_t -= n_to_spawn / rate
 
         for _ in range(n_to_spawn):
             self.spawn_particle(level)
@@ -131,38 +141,95 @@ class ParticleEmitter:
 
 class Level:
 
-    def __init__(self, size):
+    def __init__(self, size, spawn_rate=SPAWN_RATE):
         self.size = size
         self.particles: ParticleArray = ParticleArray()
+        self.spawn_rate = spawn_rate
+
         self.absorbers = []
         self.emitters = []
+
+        self.geometry = pygame.Surface(size).convert()
+        self.energy = numpy.zeros(size, dtype=numpy.float16)
 
     def update(self, dt):
         self.update_emitters(dt)
         self.update_particles(dt)
 
+        self.energy *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
+
     def update_emitters(self, dt):
+        total_weight = sum((emit.weight for emit in self.emitters), start=0)
         for emitter in self.emitters:
-            emitter.update(dt, self)
+            rate = self.spawn_rate * emitter.weight / total_weight
+            emitter.update(dt, rate, self)
 
     def update_particles(self, dt):
         self.particles.update(dt)
+        self._handle_collisions(dt)
+
+    def _handle_collisions(self, dt):
+        for idx in self.particles.all_active_indices():
+            x = int(self.particles.x[idx])
+            y = int(self.particles.y[idx])
+            if self.is_valid((x, y)):
+                geom = (255 - self.geometry.get_at((x, y))[0]) / 255
+                if geom > 0 and random.random() < dt * 1000:
+                    energy_lost = ENERGY_TRANSFER_ON_COLLISION * self.particles.energy[idx]
+                    self.energy[x][y] += energy_lost
+                    self.particles.energy[idx] -= energy_lost
+
+                    new_angle = random.random() * 2 * math.pi
+                    self.particles.vx[idx] = PARTICLE_VELOCITY * math.cos(new_angle)
+                    self.particles.vy[idx] = PARTICLE_VELOCITY * math.sin(new_angle)
+
+    def render_geometry(self, surf: pygame.Surface):
+        #surf.fill((255, 255, 255))
+        #surf.blit(self.geometry, (0, 0), special_flags=pygame.BLEND_RGB_SUB)
+        surf.blit(self.geometry, (0, 0))
+
+    def is_valid(self, xy):
+        return 0 <= xy[0] < self.size[0] and 0 <= xy[1] < self.size[1]
 
     def render_particles(self, surf: pygame.Surface):
         for xy in self.particles.all_particle_xys(as_ints=True):
-            surf.set_at(xy, "red")
+            if self.is_valid(xy):
+                surf.set_at(xy, "red")
+
+    def render_energy(self, surf: pygame.Surface):
+        rbuf = pygame.surfarray.pixels_red(surf)
+        max_energy = numpy.max(self.energy)
+        if max_energy > 0:
+            rbuf[:] = ((self.energy / max_energy) * 255).astype(numpy.int16)
+
+def load_level_from_file(filename) -> Level:
+    img = pygame.image.load(f'{LEVEL_DIR}/{filename}').convert()
+    size = img.get_size()
+    res = Level(size)
+
+    for y in range(size[1]):
+        for x in range(size[0]):
+            clr = img.get_at((x, y))
+            if clr == (255, 0, 0):
+                res.emitters.append(ParticleEmitter((x, y)))
+                img.set_at((x, y), (255, 255, 255))
+            elif clr == (0, 0, 255):
+                # TODO spawn player
+                img.set_at((x, y), (255, 255, 255))
+
+    res.geometry.blit(img, (0, 0))
+    return res
 
 
 if __name__ == "__main__":
-    DIMS = (240, 120)
-    screen = utils.make_fancy_scaled_display(DIMS, scale_factor=4)
+    DIMS = (64, 48)
+    screen = utils.make_fancy_scaled_display(DIMS, scale_factor=8)
     pygame.display.set_caption(GAME_TITLE)
 
     clock = pygame.time.Clock()
     dt = 0
 
-    level = Level(DIMS)
-    level.emitters.append(ParticleEmitter((DIMS[0] // 2, DIMS[1] // 2), 250))
+    level = load_level_from_file("test.png")
 
     frm_cnt = 0
 
@@ -172,11 +239,20 @@ if __name__ == "__main__":
             if e.type == pygame.QUIT or \
                     (e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE):
                 running = False
+            elif e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_r:
+                    level = load_level_from_file("test.png")
+
+        keys = pygame.key.get_pressed()
 
         level.update(dt)
 
         screen.fill("black")
-        level.render_particles(screen)
+        if keys[pygame.K_p]:
+            level.render_geometry(screen)
+            level.render_particles(screen)
+        else:
+            level.render_energy(screen)
 
         pygame.display.flip()
 

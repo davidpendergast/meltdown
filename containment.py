@@ -7,14 +7,19 @@ import src.utils as utils
 GAME_TITLE = "Containment"
 LEVEL_DIR = "levels"
 
+KEYS_HELD_THIS_FRAME = None
+
 AMBIENT_ENERGY_DECAY_RATE = 0.1
 
-SPAWN_RATE = 50
+SPAWN_RATE = 100
 PARTICLE_DURATION = 5
 
 PARTICLE_VELOCITY = 10
 PARTICLE_ENERGY = 100
 ENERGY_TRANSFER_ON_COLLISION = 0.1
+
+MOVE_RESOLUTION = 4
+MOVE_SPEED = 16
 
 class ParticleArray:
 
@@ -119,15 +124,56 @@ class ParticleArray:
         return f"{type(self).__name__}({len(self)} Particles)"
 
 
-class ParticleEmitter:
+class Entity:
 
-    def __init__(self, xy, weight=1):
+    def __init__(self, xy, dims=(1, 1)):
         self.xy = xy
-        self.weight = weight
+        self.dims = dims
 
+    def get_rect(self):
+        return (self.xy[0], self.xy[1], self.dims[0], self.dims[1])
+
+    def update(self, dt, level, **kwargs):
+        pass
+
+    def render(self, surf, color):
+        rect = self.get_rect()
+        pygame.draw.rect(surf, color, (int(rect[0]), int(rect[1]), 
+                                       max(1, round(rect[2])),
+                                       max(1, round(rect[3]))))
+
+    def resolve_rect_collision_with_level(self, level, geom_thresh=0.1) -> bool:
+        rect = self.get_rect()
+        if level.is_colliding(rect, geom_thresh=geom_thresh):
+            x, y = rect[0], rect[1]
+            x_to_check = (x, int(x) + 1, int(x + rect[2]) - rect[2])
+            y_to_check = (y, int(y) + 1, int(y + rect[3]) - rect[3])
+
+            candidate_xys = []
+            for cx in x_to_check:
+                for cy in y_to_check:
+                    candidate_xys.append((cx, cy))
+            candidate_xys.sort(key=lambda cxy_: (x - cxy_[0])**2 + (y - cxy_[1])**2)
+
+            for cxy in candidate_xys:
+                if not level.is_colliding((cxy[0], cxy[1], rect[2], rect[3])):
+                    self.xy[0] = cxy[0]
+                    self.xy[1] = cxy[1]
+                    return True
+            print(f"Failed to resolve collision at: {self.xy}")
+            return False
+        return True
+
+
+class ParticleEmitter(Entity):
+
+    def __init__(self, xy, dims=(1, 1), weight=1):
+        super().__init__(xy, dims=dims)
+        self.weight = weight
         self.accum_t = 0
 
-    def update(self, dt, rate, level):
+    def update(self, dt, level, rate=1, **kwargs):
+        super().update(dt, level)
         self.accum_t += dt
         n_to_spawn = int(rate * self.accum_t)
         self.accum_t -= n_to_spawn / rate
@@ -139,6 +185,39 @@ class ParticleEmitter:
         level.particles.add_particle(self.xy, PARTICLE_VELOCITY)
 
 
+class ParticleAbsorber(Entity):
+
+    def __init__(self, xy, **kwargs):
+        super().__init__(xy, **kwargs)
+
+
+class Player(ParticleAbsorber):
+
+    def __init__(self, xy, dims=(2, 2)):
+        super().__init__(xy, dims=dims)
+
+    def update(self, dt, level, **kwargs):
+        super().update(dt, level)
+        move_dir = pygame.Vector2()
+
+        keys = KEYS_HELD_THIS_FRAME
+        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+            move_dir.x -= 1
+        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+            move_dir.x += 1
+        if keys[pygame.K_w] or keys[pygame.K_UP]:
+            move_dir.y -= 1
+        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+            move_dir.y += 1
+        if move_dir.magnitude() > 0:
+            move_dir.scale_to_length(MOVE_SPEED / MOVE_RESOLUTION)
+            for _ in range(MOVE_RESOLUTION):
+                self.xy += move_dir * dt
+                self.resolve_rect_collision_with_level(level)
+        else:
+            self.resolve_rect_collision_with_level(level)
+
+
 class Level:
 
     def __init__(self, size, spawn_rate=SPAWN_RATE):
@@ -146,6 +225,7 @@ class Level:
         self.particles: ParticleArray = ParticleArray()
         self.spawn_rate = spawn_rate
 
+        self.player = None
         self.absorbers = []
         self.emitters = []
 
@@ -155,6 +235,8 @@ class Level:
     def update(self, dt):
         self.update_emitters(dt)
         self.update_particles(dt)
+        if self.player is not None:
+            self.player.update(dt, self)
 
         self.energy *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
 
@@ -162,7 +244,7 @@ class Level:
         total_weight = sum((emit.weight for emit in self.emitters), start=0)
         for emitter in self.emitters:
             rate = self.spawn_rate * emitter.weight / total_weight
-            emitter.update(dt, rate, self)
+            emitter.update(dt, self, rate=rate)
 
     def update_particles(self, dt):
         self.particles.update(dt)
@@ -173,7 +255,7 @@ class Level:
             x = int(self.particles.x[idx])
             y = int(self.particles.y[idx])
             if self.is_valid((x, y)):
-                geom = (255 - self.geometry.get_at((x, y))[0]) / 255
+                geom = self.get_geom_at((x, y))
                 if geom > 0 and random.random() < dt * 1000:
                     energy_lost = ENERGY_TRANSFER_ON_COLLISION * self.particles.energy[idx]
                     self.energy[x][y] += energy_lost
@@ -191,6 +273,19 @@ class Level:
     def is_valid(self, xy):
         return 0 <= xy[0] < self.size[0] and 0 <= xy[1] < self.size[1]
 
+    def get_geom_at(self, xy, or_else=1):
+        if not self.is_valid(xy):
+            return or_else
+        else:
+            return (255 - self.geometry.get_at(xy)[0]) / 255
+
+    def is_colliding(self, rect, thresh=0.001, geom_thresh=0.1):
+        for x in range(int(rect[0] + thresh), int(rect[0] + rect[2] + 1 - thresh)):
+            for y in range(int(rect[1] + thresh), int(rect[1] + rect[3] + 1 - thresh)):
+                if self.get_geom_at((x, y)) >= geom_thresh:
+                    return True
+        return False
+
     def render_particles(self, surf: pygame.Surface):
         for xy in self.particles.all_particle_xys(as_ints=True):
             if self.is_valid(xy):
@@ -202,6 +297,10 @@ class Level:
         if max_energy > 0:
             rbuf[:] = ((self.energy / max_energy) * 255).astype(numpy.int16)
 
+    def render_entities(self, surf: pygame.Surface):
+        if self.player is not None:
+            self.player.render(surf, "blue")
+
 def load_level_from_file(filename) -> Level:
     img = pygame.image.load(f'{LEVEL_DIR}/{filename}').convert()
     size = img.get_size()
@@ -211,10 +310,10 @@ def load_level_from_file(filename) -> Level:
         for x in range(size[0]):
             clr = img.get_at((x, y))
             if clr == (255, 0, 0):
-                res.emitters.append(ParticleEmitter((x, y)))
+                res.emitters.append(ParticleEmitter((x + 0.5, y + 0.5)))
                 img.set_at((x, y), (255, 255, 255))
             elif clr == (0, 0, 255):
-                # TODO spawn player
+                res.player = Player((x + 1, y + 1))
                 img.set_at((x, y), (255, 255, 255))
 
     res.geometry.blit(img, (0, 0))
@@ -243,16 +342,18 @@ if __name__ == "__main__":
                 if e.key == pygame.K_r:
                     level = load_level_from_file("test.png")
 
-        keys = pygame.key.get_pressed()
+        KEYS_HELD_THIS_FRAME = pygame.key.get_pressed()
 
         level.update(dt)
 
         screen.fill("black")
-        if keys[pygame.K_p]:
+        if KEYS_HELD_THIS_FRAME[pygame.K_p]:
             level.render_geometry(screen)
             level.render_particles(screen)
         else:
             level.render_energy(screen)
+
+        level.render_entities(screen)
 
         pygame.display.flip()
 

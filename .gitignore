@@ -1,0 +1,13 @@
+*.xcf
+.git/*
+.idea/*
+*__pycache__*
+test.py
+trash/*
+output.spec
+dest/*
+dist/*
+build/*
+*.mp4
+mp4s/*
+logs/*

@@ -7,19 +7,27 @@ import src.utils as utils
 GAME_TITLE = "Containment"
 LEVEL_DIR = "levels"
 
+DIMS = (64, 48)
+DISPLAY_SCALE_FACTOR = 4
+EXTRA_SCREEN_HEIGHT = 48
+SCREEN_DIMS = (DISPLAY_SCALE_FACTOR * DIMS[0],
+               DISPLAY_SCALE_FACTOR * DIMS[1] + EXTRA_SCREEN_HEIGHT)
+
 KEYS_HELD_THIS_FRAME = None
 
-AMBIENT_ENERGY_DECAY_RATE = 0.1
+AMBIENT_ENERGY_DECAY_RATE = 0.2
 
 SPAWN_RATE = 100
 PARTICLE_DURATION = 5
 
 PARTICLE_VELOCITY = 10
-PARTICLE_ENERGY = 100
+PARTICLE_ENERGY = 400
 ENERGY_TRANSFER_ON_COLLISION = 0.1
 
 MOVE_RESOLUTION = 4
 MOVE_SPEED = 16
+
+MAX_DOSE = PARTICLE_ENERGY * 4
 
 class ParticleArray:
 
@@ -123,6 +131,32 @@ class ParticleArray:
     def __repr__(self):
         return f"{type(self).__name__}({len(self)} Particles)"
 
+class Spritesheet:
+    player = []
+    barrels = []
+
+    heart_icon = None
+    skull_icon = None
+    bar_empty = None
+    bar_full = None
+
+    @staticmethod
+    def load(filepath):
+        def scale(surf, factor):
+            return pygame.transform.scale_by(surf, (factor, factor))
+        img = pygame.image.load(filepath).convert_alpha()
+        x = 0
+        y = 0
+        Spritesheet.player = img.subsurface([x, y, 32, 32])
+        Spritesheet.barrels = [img.subsurface([(x := x + 32), y, 16, 32]),
+                               img.subsurface([(x := x + 16), y, 16, 32])]
+        y += 32
+        bar_sc = 2
+        Spritesheet.heart_icon = scale(img.subsurface([0, y, 17, 17]), bar_sc)
+        Spritesheet.skull_icon = scale(img.subsurface([17 + 46, y, 17, 17]), bar_sc)
+        Spritesheet.bar_empty = scale(img.subsurface([17, y, 46, 17]), bar_sc)
+        Spritesheet.bar_full = scale(img.subsurface([15, y + 16, 50, 17]), bar_sc)
+
 
 class Entity:
 
@@ -138,9 +172,10 @@ class Entity:
 
     def render(self, surf, color):
         rect = self.get_rect()
-        pygame.draw.rect(surf, color, (int(rect[0]), int(rect[1]), 
-                                       max(1, round(rect[2])),
-                                       max(1, round(rect[3]))))
+        pygame.draw.rect(surf, color, (int(rect[0] * DISPLAY_SCALE_FACTOR),
+                                       int(rect[1] * DISPLAY_SCALE_FACTOR),
+                                       max(1, round(rect[2] * DISPLAY_SCALE_FACTOR)),
+                                       max(1, round(rect[3] * DISPLAY_SCALE_FACTOR))))
 
     def resolve_rect_collision_with_level(self, level, geom_thresh=0.1) -> bool:
         rect = self.get_rect()
@@ -187,8 +222,22 @@ class ParticleEmitter(Entity):
 
 class ParticleAbsorber(Entity):
 
-    def __init__(self, xy, **kwargs):
+    def __init__(self, xy, absorb_rate=1, **kwargs):
         super().__init__(xy, **kwargs)
+        self.absorb_rate = absorb_rate
+        self.energy_accum = 0
+        self.decay_rate = AMBIENT_ENERGY_DECAY_RATE
+        self.update_particles = True
+
+    def absorb(self, dt, level, p_idx):
+        to_absorb = level.particles.energy[p_idx] * min(1, self.absorb_rate * dt)
+        self.energy_accum += to_absorb
+        if self.update_particles:
+            level.particles.energy[p_idx] -= to_absorb
+
+    def update(self, dt, level, **kwargs):
+        super().update(dt, level, **kwargs)
+        self.energy_accum *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
 
 
 class Player(ParticleAbsorber):
@@ -217,6 +266,16 @@ class Player(ParticleAbsorber):
         else:
             self.resolve_rect_collision_with_level(level)
 
+    def render(self, surf, color):
+        rect = self.get_rect()
+        center_xy_on_screen = (
+            DISPLAY_SCALE_FACTOR * (rect[0] + rect[2] / 2),
+            DISPLAY_SCALE_FACTOR * (rect[1] + rect[3] / 2))
+        sprite = Spritesheet.player
+        blit_xy = (center_xy_on_screen[0] - sprite.get_width() // 2,
+                   center_xy_on_screen[1] - sprite.get_height() // 2)
+        surf.blit(Spritesheet.player, blit_xy)
+
 
 class Level:
 
@@ -224,6 +283,7 @@ class Level:
         self.size = size
         self.particles: ParticleArray = ParticleArray()
         self.spawn_rate = spawn_rate
+        self.spatial_hash = {}
 
         self.player = None
         self.absorbers = []
@@ -237,6 +297,7 @@ class Level:
         self.update_particles(dt)
         if self.player is not None:
             self.player.update(dt, self)
+        self.update_absorbers(dt)
 
         self.energy *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
 
@@ -250,7 +311,31 @@ class Level:
         self.particles.update(dt)
         self._handle_collisions(dt)
 
+    def update_absorbers(self, dt):
+        for absorber in self.absorbers:
+            for idx in self.all_particles_indices_in_rect(absorber.get_rect()):
+                absorber.absorb(dt, self, idx)
+
+    def add_entity(self, ent):
+        if isinstance(ent, ParticleEmitter):
+            self.emitters.append(ent)
+        if isinstance(ent, ParticleAbsorber):
+            self.absorbers.append(ent)
+        if isinstance(ent, Player):
+            if self.player is not None:
+                raise ValueError("level already has a player")
+            self.player = ent
+
+    def remove_entity(self, ent):
+        if isinstance(ent, ParticleEmitter):
+            self.emitters.remove(ent)
+        if isinstance(ent, ParticleAbsorber):
+            self.absorbers.remove(ent)
+        if isinstance(ent, Player):
+            self.player = None  # hope it's the same player
+
     def _handle_collisions(self, dt):
+        self.spatial_hash.clear()
         for idx in self.particles.all_active_indices():
             x = int(self.particles.x[idx])
             y = int(self.particles.y[idx])
@@ -264,11 +349,20 @@ class Level:
                     new_angle = random.random() * 2 * math.pi
                     self.particles.vx[idx] = PARTICLE_VELOCITY * math.cos(new_angle)
                     self.particles.vy[idx] = PARTICLE_VELOCITY * math.sin(new_angle)
+                if (x, y) not in self.spatial_hash:
+                    self.spatial_hash[(x, y)] = []
+                self.spatial_hash[(x, y)].append(idx)
+
+    def all_particles_indices_in_rect(self, rect, thresh=0.001):
+        for xy in self.all_cells_in_rect(rect, thresh=thresh):
+            if xy in self.spatial_hash:
+                for idx in self.spatial_hash[xy]:
+                    yield idx
 
     def render_geometry(self, surf: pygame.Surface):
-        #surf.fill((255, 255, 255))
-        #surf.blit(self.geometry, (0, 0), special_flags=pygame.BLEND_RGB_SUB)
-        surf.blit(self.geometry, (0, 0))
+        surf.fill((255, 255, 255))
+        surf.blit(self.geometry, (0, 0), special_flags=pygame.BLEND_RGB_SUB)
+        # surf.blit(self.geometry, (0, 0))
 
     def is_valid(self, xy):
         return 0 <= xy[0] < self.size[0] and 0 <= xy[1] < self.size[1]
@@ -279,10 +373,14 @@ class Level:
         else:
             return (255 - self.geometry.get_at(xy)[0]) / 255
 
-    def is_colliding(self, rect, thresh=0.001, geom_thresh=0.1):
+    def all_cells_in_rect(self, rect, thresh=0.001):
         for x in range(int(rect[0] + thresh), int(rect[0] + rect[2] + 1 - thresh)):
             for y in range(int(rect[1] + thresh), int(rect[1] + rect[3] + 1 - thresh)):
-                if self.get_geom_at((x, y)) >= geom_thresh:
+                yield (x, y)
+
+    def is_colliding(self, rect, thresh=0.001, geom_thresh=0.1):
+        for xy in self.all_cells_in_rect(rect, thresh=thresh):
+                if self.get_geom_at(xy) >= geom_thresh:
                     return True
         return False
 
@@ -293,9 +391,9 @@ class Level:
 
     def render_energy(self, surf: pygame.Surface):
         rbuf = pygame.surfarray.pixels_red(surf)
-        max_energy = numpy.max(self.energy)
+        max_energy = PARTICLE_ENERGY * 1.5  # numpy.max(self.energy)
         if max_energy > 0:
-            rbuf[:] = ((self.energy / max_energy) * 255).astype(numpy.int16)
+            rbuf[:] = (numpy.clip(self.energy / max_energy, 0, 1) * 255).astype(numpy.int16)
 
     def render_entities(self, surf: pygame.Surface):
         if self.player is not None:
@@ -310,25 +408,48 @@ def load_level_from_file(filename) -> Level:
         for x in range(size[0]):
             clr = img.get_at((x, y))
             if clr == (255, 0, 0):
-                res.emitters.append(ParticleEmitter((x + 0.5, y + 0.5)))
+                res.add_entity(ParticleEmitter((x + 0.5, y + 0.5)))
                 img.set_at((x, y), (255, 255, 255))
             elif clr == (0, 0, 255):
-                res.player = Player((x + 1, y + 1))
+                res.add_entity(Player((x + 1, y + 1)))
                 img.set_at((x, y), (255, 255, 255))
 
     res.geometry.blit(img, (0, 0))
     return res
 
 
+def render_dose_bar(surf: pygame.Surface, rect, pcnt):
+    # pygame.draw.rect(surf, (0, 255, 0), rect, width=0)
+
+    icon_w = Spritesheet.heart_icon.get_width()
+    icon_h = Spritesheet.heart_icon.get_height()
+    pcnt = min(1, max(0, pcnt))
+
+    bar_rect = (rect[0] + icon_w, rect[1], rect[2] - icon_w * 2, rect[3])
+    filled_bar_rect = (bar_rect[0] - 2 * int(icon_w / 17), rect[1], bar_rect[2] + 3 * int(icon_w / 17), rect[3])
+
+    xformed_full_bar_sprite = pygame.transform.scale(Spritesheet.bar_full, filled_bar_rect[2:4])
+    full_bar_sprite = xformed_full_bar_sprite.subsurface((0, 0, int(filled_bar_rect[2] * pcnt), icon_h))
+    surf.blit(full_bar_sprite, filled_bar_rect)
+
+    surf.blit(Spritesheet.heart_icon, rect[0:2])
+    surf.blit(Spritesheet.skull_icon, (rect[0] + rect[2] - icon_w, rect[1]))
+
+    surf.blit(pygame.transform.scale(Spritesheet.bar_empty, bar_rect[2:4]),
+              (rect[0] + icon_w, rect[1], rect[2] - icon_w * 2, rect[3]))
+
+
 if __name__ == "__main__":
-    DIMS = (64, 48)
-    screen = utils.make_fancy_scaled_display(DIMS, scale_factor=8)
+    screen = utils.make_fancy_scaled_display(SCREEN_DIMS, scale_factor=2, extra_flags=pygame.RESIZABLE)
     pygame.display.set_caption(GAME_TITLE)
+
+    rad_surf = pygame.Surface(DIMS)
 
     clock = pygame.time.Clock()
     dt = 0
 
     level = load_level_from_file("test.png")
+    Spritesheet.load("assets/sprites.png")
 
     frm_cnt = 0
 
@@ -347,18 +468,28 @@ if __name__ == "__main__":
         level.update(dt)
 
         screen.fill("black")
-        if KEYS_HELD_THIS_FRAME[pygame.K_p]:
-            level.render_geometry(screen)
-            level.render_particles(screen)
-        else:
-            level.render_energy(screen)
+        rad_surf.fill("black")
 
+        if KEYS_HELD_THIS_FRAME[pygame.K_p]:
+            level.render_geometry(rad_surf)
+            level.render_particles(rad_surf)
+        else:
+            level.render_energy(rad_surf)
+
+        screen.blit(pygame.transform.scale_by(rad_surf, (DISPLAY_SCALE_FACTOR,) * 2), (0, 0))
         level.render_entities(screen)
+
+        dose_bar_size = (2 * SCREEN_DIMS[0] // 3, Spritesheet.heart_icon.get_height())
+        render_dose_bar(screen, (SCREEN_DIMS[0] // 2 - dose_bar_size[0] // 2,
+                                 SCREEN_DIMS[1] - EXTRA_SCREEN_HEIGHT // 2 - dose_bar_size[1] // 2,
+                                 dose_bar_size[0], dose_bar_size[1]),
+                        level.player.energy_accum / MAX_DOSE)
 
         pygame.display.flip()
 
         if frm_cnt % 15 == 14:
-            pygame.display.set_caption(f"{GAME_TITLE} (FPS={clock.get_fps():.2f}, N={len(level.particles)})")
+            pygame.display.set_caption(f"{GAME_TITLE} (FPS={clock.get_fps():.2f}, "
+                                       f"N={len(level.particles)}, pE={level.player.energy_accum})")
 
         dt = clock.tick() / 1000
         frm_cnt += 1

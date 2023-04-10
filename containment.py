@@ -131,7 +131,9 @@ class ParticleArray:
     def __repr__(self):
         return f"{type(self).__name__}({len(self)} Particles)"
 
+
 class Spritesheet:
+
     player = []
     barrels = []
 
@@ -244,6 +246,7 @@ class Player(ParticleAbsorber):
 
     def __init__(self, xy, dims=(2, 2)):
         super().__init__(xy, dims=dims)
+        self.last_dir = pygame.Vector2(0, 1)
 
     def update(self, dt, level, **kwargs):
         super().update(dt, level)
@@ -263,6 +266,7 @@ class Player(ParticleAbsorber):
             for _ in range(MOVE_RESOLUTION):
                 self.xy += move_dir * dt
                 self.resolve_rect_collision_with_level(level)
+            self.last_dir = move_dir
         else:
             self.resolve_rect_collision_with_level(level)
 
@@ -271,10 +275,13 @@ class Player(ParticleAbsorber):
         center_xy_on_screen = (
             DISPLAY_SCALE_FACTOR * (rect[0] + rect[2] / 2),
             DISPLAY_SCALE_FACTOR * (rect[1] + rect[3] / 2))
-        sprite = Spritesheet.player
+
+        angle = self.last_dir.as_polar()[1]
+        sprite = pygame.transform.rotate(Spritesheet.player, -angle + 90)
+
         blit_xy = (center_xy_on_screen[0] - sprite.get_width() // 2,
                    center_xy_on_screen[1] - sprite.get_height() // 2)
-        surf.blit(Spritesheet.player, blit_xy)
+        surf.blit(sprite, blit_xy)
 
 
 class Level:
@@ -359,8 +366,8 @@ class Level:
                 for idx in self.spatial_hash[xy]:
                     yield idx
 
-    def render_geometry(self, surf: pygame.Surface):
-        surf.fill((255, 255, 255))
+    def render_geometry(self, surf: pygame.Surface, color=(255, 255, 255)):
+        surf.fill(color)
         surf.blit(self.geometry, (0, 0), special_flags=pygame.BLEND_RGB_SUB)
         # surf.blit(self.geometry, (0, 0))
 
@@ -471,7 +478,7 @@ if __name__ == "__main__":
         rad_surf.fill("black")
 
         if KEYS_HELD_THIS_FRAME[pygame.K_p]:
-            level.render_geometry(rad_surf)
+            level.render_geometry(rad_surf, color=(35, 40, 50))
             level.render_particles(rad_surf)
         else:
             level.render_energy(rad_surf)
@@ -493,6 +500,4 @@ if __name__ == "__main__":
 
         dt = clock.tick() / 1000
         frm_cnt += 1
-
-
 

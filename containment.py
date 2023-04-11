@@ -169,15 +169,20 @@ class Spritesheet:
 class Entity:
 
     def __init__(self, xy, dims=(1, 1)):
-        self.xy = xy  # top left corner
+        self._xy = xy  # top left corner
         self.dims = dims
         self.body = None
 
     def get_rect(self):
-        return (self.xy[0], self.xy[1], self.dims[0], self.dims[1])
+        cx, cy = self.get_center()
+        return (cx - self.dims[0] / 2, cy - self.dims[1], self.dims[0], self.dims[1])
 
     def get_center(self):
-        return (self.xy[0] + self.dims[0] / 2, self.xy[1] + self.dims[1] / 2)
+        if self.body is not None:
+            pt_b2 = self.body.GetWorldPoint((0, 0))
+            return (pt_b2[0] / BOX2D_SCALE_FACTOR, pt_b2[1] / BOX2D_SCALE_FACTOR)
+        else:
+            return (self._xy[0] + self.dims[0] / 2, self._xy[1] + self.dims[1] / 2)
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         return None
@@ -214,10 +219,9 @@ class Entity:
 
             for cxy in candidate_xys:
                 if not level.is_colliding((cxy[0], cxy[1], rect[2], rect[3])):
-                    self.xy[0] = cxy[0]
-                    self.xy[1] = cxy[1]
+                    self._xy = cxy
                     return True
-            print(f"Failed to resolve collision at: {self.xy}")
+            print(f"Failed to resolve collision at: {self._xy}")
             return False
         return True
 
@@ -241,6 +245,21 @@ def make_dynamic_polygon_body(world, polygon, color=(125, 255, 125)) -> Box2D.b2
         )
     )
 
+def make_static_polygon_body(world, polygon, color=(125, 255, 125)) -> Box2D.b2Body:
+    avg_x = sum(xy[0] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
+    avg_y = sum(xy[1] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
+    shifted_pts = [(x * BOX2D_SCALE_FACTOR - avg_x, y * BOX2D_SCALE_FACTOR - avg_y) for (x, y) in polygon]
+
+    return world.CreateStaticBody(
+        position=(avg_x, avg_y),
+        userData={
+            'color': color
+        },
+        fixtures=Box2D.b2FixtureDef(
+            shape=Box2D.b2PolygonShape(vertices=shifted_pts)
+        )
+    )
+
 def make_dynamic_circle_body(world, xy, radius, color=(125, 125, 125)):
     return world.CreateDynamicBody(
         position=(xy[0] * BOX2D_SCALE_FACTOR, xy[1] * BOX2D_SCALE_FACTOR),
@@ -261,8 +280,8 @@ def make_dynamic_circle_body(world, xy, radius, color=(125, 125, 125)):
 
 class ParticleEmitter(Entity):
 
-    def __init__(self, xy, dims=(1, 1), weight=1):
-        super().__init__(xy, dims=dims)
+    def __init__(self, xy, dims=(3, 3), weight=1):
+        super().__init__((xy[0] - dims[0] / 2, xy[1] - dims[1] / 2), dims=dims)
         self.weight = weight
         self.accum_t = 0
 
@@ -286,8 +305,10 @@ class ParticleEmitter(Entity):
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
         return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0))
 
-    def spawn_particle(self, level: 'Level'):
-        level.particles.add_particle(self.xy, PARTICLE_VELOCITY)
+    def spawn_particle(self, level: 'Level', n=1):
+        c_xy = self.get_center()
+        for _ in range(n):
+            level.particles.add_particle(c_xy, PARTICLE_VELOCITY)
 
 
 class ParticleAbsorber(Entity):
@@ -317,13 +338,20 @@ class PolygonEntity(Entity):
 
         chull = convexhull.ConvexHull()
         chull.add_all(pt for pt in poly_list)
-        self.poly_list = chull.get_hull_points()
+        self._poly_list = chull.get_hull_points()
+
+    def get_pts(self):
+        if self.body is not None:
+            b2_pts = [self.body.GetWorldPoint(pt) for pt in self.body.fixtures[0].shape.vertices]
+            return [(x / BOX2D_SCALE_FACTOR, y / BOX2D_SCALE_FACTOR) for (x, y) in b2_pts]
+        else:
+            return self._poly_list
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
-        return make_dynamic_polygon_body(world, self.poly_list, (255, 255, 255))
+        return make_dynamic_polygon_body(world, self._poly_list, (255, 255, 255))
 
     def render(self, surf, color=(255, 255, 255)):
-        base_pts = [self.convert_to_screen_pt(xy) for xy in self.poly_list]
+        base_pts = [self.convert_to_screen_pt(xy) for xy in self.get_pts()]
         top_pts = [(x, y - 8) for (x, y) in base_pts]
 
         chull = convexhull.ConvexHull()
@@ -369,10 +397,8 @@ class Player(ParticleAbsorber):
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             move_dir.y += 1
         if move_dir.magnitude() > 0:
-            move_dir.scale_to_length(MOVE_SPEED / MOVE_RESOLUTION)
-            for _ in range(MOVE_RESOLUTION):
-                self.xy += move_dir * dt
-                self.resolve_rect_collision_with_level(level)
+            move_dir.scale_to_length(MOVE_SPEED)
+            self.body.linearVelocity = (move_dir * BOX2D_SCALE_FACTOR).xy
             self.last_dir = move_dir
         else:
             self.resolve_rect_collision_with_level(level)
@@ -383,14 +409,11 @@ class Player(ParticleAbsorber):
 
     def render(self, surf, color=(0, 0, 255)):
         center_xy_on_screen = self.get_center_xy_on_screen()
-
         angle = self.last_dir.as_polar()[1]
         sprite = pygame.transform.rotate(Spritesheet.player, -angle + 90)
-
         blit_xy = (center_xy_on_screen[0] - sprite.get_width() // 2,
                    center_xy_on_screen[1] - sprite.get_height() // 2)
         surf.blit(sprite, blit_xy)
-        surf.set_at((int(center_xy_on_screen[0]), int(center_xy_on_screen[1])), (255, 0, 0))
 
 
 class Level:
@@ -544,7 +567,9 @@ class Level:
                 seen.add(id(polygon))
 
     def render_entities(self, surf: pygame.Surface):
-        for ent in self.all_entities():
+        all_ents = [ent for ent in self.all_entities()]
+        all_ents.sort(key=lambda e: e.get_center()[1])
+        for ent in all_ents:
             ent.render(surf)
 
 def load_level_from_file(filename) -> Level:
@@ -563,12 +588,16 @@ def load_level_from_file(filename) -> Level:
             elif clr == (0, 0, 255):
                 res.add_entity(Player((x + 1, y + 1)))
                 img.set_at((x, y), (255, 255, 255))
-            elif clr == (255, 255, 255) or clr == (0, 0, 0):
-                pass
+            elif clr == (0, 0, 0):
+                pts = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)]
+                make_static_polygon_body(res.world, pts, color=(96, 96, 96))
+            elif clr == (255, 255, 255):
+                pass  # empty
             else:
                 if clr.rgb not in other_colors:
                     other_colors[clr.rgb] = []
                 other_colors[clr.rgb].append((x, y))
+                img.set_at((x, y), (255, 255, 255))
 
     for clr in other_colors:
         res.add_entity(PolygonEntity(other_colors[clr]))

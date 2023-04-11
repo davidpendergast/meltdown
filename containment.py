@@ -264,12 +264,36 @@ class PolygonEntity(Entity):
         super().__init__(poly_list[0])
 
         chull = convexhull.ConvexHull()
-        chull.add_all(pygame.Vector2(pt) for pt in poly_list)
+        chull.add_all(pt for pt in poly_list)
         self.poly_list = chull.get_hull_points()
 
     def render(self, surf, color=(255, 255, 255)):
-        pts_on_screen = [self.convert_to_screen_pt(xy) for xy in self.poly_list]
-        pygame.draw.polygon(surf, (0, 255, 0), pts_on_screen)
+        base_pts = [self.convert_to_screen_pt(xy) for xy in self.poly_list]
+        top_pts = [(x, y - 8) for (x, y) in base_pts]
+
+        chull = convexhull.ConvexHull()
+        chull.add_all(base_pts)
+        chull.add_all(top_pts)
+        hull_pts = [pygame.Vector2(xy) for xy in chull.get_hull_points()]
+
+        pygame.draw.polygon(surf, (0, 0, 0), hull_pts, width=3)
+        pygame.draw.polygon(surf, (47, 47, 47), hull_pts)
+
+        min_x = float('inf')
+        max_x = -float('inf')
+        for (x, y) in base_pts:
+            min_x = min(x, min_x)
+            max_x = max(x, max_x)
+
+        for i in range(len(base_pts)):
+            base_xy = base_pts[i]
+            if min_x < base_xy[0] < max_x:
+                pygame.draw.line(surf, (0, 0, 0), base_xy, top_pts[i])
+
+        pygame.draw.polygon(surf, (90, 90, 90), top_pts)
+        pygame.draw.polygon(surf, (195, 195, 195), top_pts, width=1)
+
+
 
 class Player(ParticleAbsorber):
 

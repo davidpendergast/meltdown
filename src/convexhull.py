@@ -22,8 +22,8 @@ class ConvexHull(object):
         :return: integer
         '''
         difference = (
-            ((p2.x - origin.x) * (p1.y - origin.y))
-            - ((p1.x - origin.x) * (p2.y - origin.y))
+            ((p2[0] - origin[0]) * (p1[1] - origin[1]))
+            - ((p1[0] - origin[0]) * (p2[1] - origin[1]))
         )
 
         return difference
@@ -37,10 +37,10 @@ class ConvexHull(object):
 
         # get leftmost point
         start = points[0]
-        min_x = start.x
+        min_x = start[0]
         for p in points[1:]:
-            if p.x < min_x:
-                min_x = p.x
+            if p[0] < min_x:
+                min_x = p[0]
                 start = p
 
         point = start

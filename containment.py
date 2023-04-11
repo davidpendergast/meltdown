@@ -2,6 +2,7 @@ import numpy
 import math
 import random
 import pygame
+import typing
 
 import Box2D
 
@@ -19,7 +20,9 @@ SCREEN_DIMS = (DISPLAY_SCALE_FACTOR * DIMS[0],
 
 BOX2D_SCALE_FACTOR = 1
 
-KEYS_HELD_THIS_FRAME = None
+KEYS_HELD_THIS_FRAME = set()
+KEYS_PRESSED_THIS_FRAME = set()
+KEYS_RELEASED_THIS_FRAME = set()
 
 AMBIENT_ENERGY_DECAY_RATE = 0.2
 
@@ -278,6 +281,41 @@ def make_dynamic_circle_body(world, xy, radius, color=(125, 125, 125)):
     )
 
 
+def all_fixtures_in_rect(world: Box2D.b2World, rect, cond=None, continue_after=lambda fix: True) \
+        -> typing.Generator[Box2D.b2Fixture, None, None]:
+    """Finds all fixtures in the world whose bounding boxes overlap a rectangle."""
+    rect = [x * BOX2D_SCALE_FACTOR for x in rect]
+    res_list = []
+
+    class MyQueryCallback(Box2D.b2QueryCallback):
+        def __init__(self):
+            Box2D.b2QueryCallback.__init__(self)
+
+        def ReportFixture(self, fixture):
+            if cond is None or cond(fixture):
+                res_list.append(fixture)
+                return continue_after(fixture)
+            else:
+                return True
+
+    aabb = Box2D.b2AABB(lowerBound=(rect[0], rect[1]), upperBound=(rect[0] + rect[2], rect[1] + rect[3]))
+    world.QueryAABB(MyQueryCallback(), aabb)
+
+    for fix in res_list:
+        yield fix
+
+
+def all_fixtures_at_point(world: Box2D.b2World, pt, exact=True, cond=None, continue_after=lambda fix: True) \
+        -> typing.Generator[Box2D.b2Fixture, None, None]:
+    """Finds all fixtures in the world that contain a point."""
+    pt = (pt[0] * BOX2D_SCALE_FACTOR, pt[1] * BOX2D_SCALE_FACTOR)
+    xform = Box2D.b2Transform()
+    xform.SetIdentity()
+    for fix in all_fixtures_in_rect(world, (pt[0] - 0.001, pt[1] - 0.001, 0.002, 0.002),
+                                    cond=cond, continue_after=continue_after):
+        if not exact or fix.shape.TestPoint(xform, fix.body.GetLocalPoint(pt)):
+            yield fix
+
 class ParticleEmitter(Entity):
 
     def __init__(self, xy, dims=(3, 3), weight=1):
@@ -382,19 +420,21 @@ class Player(ParticleAbsorber):
     def __init__(self, xy, dims=(2, 2)):
         super().__init__(xy, dims=dims)
         self.last_dir = pygame.Vector2(0, 1)
+        self.grab_reach = 0.666
+        self.grab_joint = None
 
     def update(self, dt, level, **kwargs):
         super().update(dt, level)
         move_dir = pygame.Vector2()
 
         keys = KEYS_HELD_THIS_FRAME
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+        if pygame.K_a in keys or pygame.K_LEFT in keys:
             move_dir.x -= 1
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+        if pygame.K_d in keys or pygame.K_RIGHT in keys:
             move_dir.x += 1
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
+        if pygame.K_w in keys or pygame.K_UP in keys:
             move_dir.y -= 1
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+        if pygame.K_s in keys or pygame.K_DOWN in keys:
             move_dir.y += 1
         if move_dir.magnitude() > 0:
             move_dir.scale_to_length(MOVE_SPEED)
@@ -403,13 +443,44 @@ class Player(ParticleAbsorber):
         else:
             self.resolve_rect_collision_with_level(level)
 
+        if pygame.K_SPACE in KEYS_PRESSED_THIS_FRAME:
+            grab_pt = pygame.Vector2(self.get_center()) + pygame.Vector2(self.last_dir).normalize() * (self.grab_reach + self.dims[0] / 2)
+            fix = [f for f in all_fixtures_at_point(level.world, grab_pt)]
+            if self.grab_joint is not None:
+                level.world.DestroyJoint(self.grab_joint)
+                self.grab_joint = None
+            if len(fix) > 0:
+                c_xy = (i * BOX2D_SCALE_FACTOR for i in self.get_center())
+                o_xy = (i * BOX2D_SCALE_FACTOR for i in grab_pt)
+                self.grab_joint = level.world.CreateDistanceJoint(
+                    bodyA=self.body,
+                    bodyB=fix[0].body,  # TODO calc best fixt to grab
+                    anchorA=Box2D.b2Vec2(*c_xy),
+                    anchorB=Box2D.b2Vec2(*o_xy),
+                    collideConnected=True)
+            print(f"GRABBED: {fix}")
+        elif pygame.K_SPACE in KEYS_RELEASED_THIS_FRAME:
+            if self.grab_joint is not None:
+                level.world.DestroyJoint(self.grab_joint)
+                self.grab_joint = None
+
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
         return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0))
 
+    def get_display_angle(self) -> float:
+        if self.grab_joint is not None:
+            anchor_a = (self.grab_joint.anchorA.x / BOX2D_SCALE_FACTOR, self.grab_joint.anchorA.y / BOX2D_SCALE_FACTOR)
+            anchor_b = (self.grab_joint.anchorB.x / BOX2D_SCALE_FACTOR, self.grab_joint.anchorB.y / BOX2D_SCALE_FACTOR)
+            vec = pygame.Vector2(anchor_b)
+            vec -= anchor_a
+            if vec.magnitude() > 0:
+                return vec.as_polar()[1]
+        return self.last_dir.as_polar()[1]
+
     def render(self, surf, color=(0, 0, 255)):
         center_xy_on_screen = self.get_center_xy_on_screen()
-        angle = self.last_dir.as_polar()[1]
+        angle = self.get_display_angle()
         sprite = pygame.transform.rotate(Spritesheet.player, -angle + 90)
         blit_xy = (center_xy_on_screen[0] - sprite.get_width() // 2,
                    center_xy_on_screen[1] - sprite.get_height() // 2)
@@ -686,28 +757,34 @@ if __name__ == "__main__":
 
     running = True
     while running:
+        KEYS_PRESSED_THIS_FRAME.clear()
+        KEYS_RELEASED_THIS_FRAME.clear()
         for e in pygame.event.get():
             if e.type == pygame.QUIT or \
                     (e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE):
                 running = False
             elif e.type == pygame.KEYDOWN:
+                KEYS_PRESSED_THIS_FRAME.add(e.key)
+                KEYS_HELD_THIS_FRAME.add(e.key)
                 if e.key == pygame.K_r:
                     level = load_level_from_file("test.png")
-
-        KEYS_HELD_THIS_FRAME = pygame.key.get_pressed()
+            elif e.type == pygame.KEYUP:
+                KEYS_RELEASED_THIS_FRAME.add(e.key)
+                if e.key in KEYS_HELD_THIS_FRAME:
+                    KEYS_HELD_THIS_FRAME.remove(e.key)
 
         level.update(dt)
 
         screen.fill("black")
         rad_surf.fill("black")
 
-        if KEYS_HELD_THIS_FRAME[pygame.K_b]:
+        if pygame.K_b in KEYS_HELD_THIS_FRAME:
             level_screen_rect = (0, 0, DIMS[0] * DISPLAY_SCALE_FACTOR, DIMS[1] * DISPLAY_SCALE_FACTOR)
             render_box2d_world(screen.subsurface(level_screen_rect), level.world,
                                [0, 0, DIMS[0] * BOX2D_SCALE_FACTOR,
                                 DIMS[1] * BOX2D_SCALE_FACTOR])
         else:
-            if KEYS_HELD_THIS_FRAME[pygame.K_p]:
+            if pygame.K_p in KEYS_HELD_THIS_FRAME:
                 level.render_geometry(rad_surf, color=(35, 40, 50))
                 level.render_particles(rad_surf)
             else:

@@ -63,3 +63,4 @@ def make_fancy_scaled_display(
         window.show()
 
     return res
+

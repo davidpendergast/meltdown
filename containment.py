@@ -3,11 +3,17 @@ import math
 import random
 import pygame
 import typing
+import os
 
 import Box2D
 
 import src.utils as utils
 import src.convexhull as convexhull
+import src.readme_writer as readme_writer
+
+IS_DEV = os.path.exists(".gitignore")
+if IS_DEV:
+    readme_writer.write_basic_readme()
 
 GAME_TITLE = "Containment"
 LEVEL_DIR = "levels"

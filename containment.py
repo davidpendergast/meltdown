@@ -29,7 +29,7 @@ AMBIENT_ENERGY_DECAY_RATE = 0.2
 SPAWN_RATE = 100
 PARTICLE_DURATION = 5
 
-PARTICLE_VELOCITY = 10
+PARTICLE_VELOCITY = 20
 PARTICLE_ENERGY = 400
 ENERGY_TRANSFER_ON_COLLISION = 0.1
 
@@ -37,6 +37,17 @@ MOVE_RESOLUTION = 4
 MOVE_SPEED = 16
 
 MAX_DOSE = PARTICLE_ENERGY * 4
+
+PARTICLE_GROUP = -1
+NORMAL_GROUP = 1
+
+WALL_CATEGORY = 0x0001
+PARTICLE_CATEGORY = 0x0002
+EMITTER_CATEGORY = 0x0004
+PLAYER_CATEGORY = 0x0008
+
+SOLID_OBJECTS = EMITTER_CATEGORY | PLAYER_CATEGORY | WALL_CATEGORY
+ALL_OBJECTS = SOLID_OBJECTS | PARTICLE_CATEGORY
 
 class ParticleArray:
 
@@ -62,7 +73,6 @@ class ParticleArray:
             self._set_capacity(new_cap)
 
     def update(self, dt):
-        # TODO real accel
         self.vx += self.ax * dt
         self.vy += self.ay * dt
         self.x += self.vx * dt
@@ -185,6 +195,9 @@ class Entity:
         self.dims = dims
         self.body = None
 
+    def get_render_layer(self):
+        return 0
+
     def get_rect(self):
         cx, cy = self.get_center()
         return (cx - self.dims[0] / 2, cy - self.dims[1], self.dims[0], self.dims[1])
@@ -244,7 +257,9 @@ class Entity:
         return self.uid == other.uid
 
 
-def make_dynamic_polygon_body(world, polygon, color=(125, 255, 125)) -> Box2D.b2Body:
+def make_dynamic_polygon_body(world, polygon, color=(125, 255, 125),
+                              linear_damping=10.0, angular_damping=10.0, density=1.0, restitution=0.12,
+                              category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS, group_index=NORMAL_GROUP) -> Box2D.b2Body:
     avg_x = sum(xy[0] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
     avg_y = sum(xy[1] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
     shifted_pts = [(x * BOX2D_SCALE_FACTOR - avg_x, y * BOX2D_SCALE_FACTOR - avg_y) for (x, y) in polygon]
@@ -254,16 +269,18 @@ def make_dynamic_polygon_body(world, polygon, color=(125, 255, 125)) -> Box2D.b2
         userData={
             'color': color
         },
-        linearDamping=10,
-        angularDamping=10,
+        linearDamping=linear_damping,
+        angularDamping=angular_damping,
         fixtures=Box2D.b2FixtureDef(
             shape=Box2D.b2PolygonShape(vertices=shifted_pts),
-            density=1,
-            restitution=0.12
+            density=density,
+            restitution=restitution,
+            categoryBits=category_bits, maskBits=mask_bits, groupIndex=group_index
         )
     )
 
-def make_static_polygon_body(world, polygon, color=(125, 255, 125)) -> Box2D.b2Body:
+def make_static_polygon_body(world, polygon, color=(125, 255, 125),
+                             category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS, group_index=NORMAL_GROUP) -> Box2D.b2Body:
     avg_x = sum(xy[0] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
     avg_y = sum(xy[1] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
     shifted_pts = [(x * BOX2D_SCALE_FACTOR - avg_x, y * BOX2D_SCALE_FACTOR - avg_y) for (x, y) in polygon]
@@ -274,23 +291,27 @@ def make_static_polygon_body(world, polygon, color=(125, 255, 125)) -> Box2D.b2B
             'color': color
         },
         fixtures=Box2D.b2FixtureDef(
-            shape=Box2D.b2PolygonShape(vertices=shifted_pts)
+            shape=Box2D.b2PolygonShape(vertices=shifted_pts),
+            categoryBits=category_bits, maskBits=mask_bits, groupIndex=group_index
         )
     )
 
-def make_dynamic_circle_body(world, xy, radius, color=(125, 125, 125)):
+def make_dynamic_circle_body(world, xy, radius, color=(125, 125, 125),
+                             linear_damping=10.0, angular_damping=10.0, density=1.0, restitution=0.12,
+                             category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS, group_index=NORMAL_GROUP):
     return world.CreateDynamicBody(
         position=(xy[0] * BOX2D_SCALE_FACTOR, xy[1] * BOX2D_SCALE_FACTOR),
         userData={
             'color': color
         },
-        linearDamping=10,
-        angularDamping=10,
+        linearDamping=linear_damping,
+        angularDamping=angular_damping,
         fixtures=[
             Box2D.b2FixtureDef(
                 shape=Box2D.b2CircleShape(pos=(0, 0), radius=radius * BOX2D_SCALE_FACTOR),
-                density=1,
-                restitution=0.12
+                density=density,
+                restitution=restitution,
+                categoryBits=category_bits, maskBits=mask_bits, groupIndex=group_index
             )
         ]
     )
@@ -331,6 +352,40 @@ def all_fixtures_at_point(world: Box2D.b2World, pt, exact=True, cond=None, conti
         if not exact or fix.shape.TestPoint(xform, fix.body.GetLocalPoint(pt)):
             yield fix
 
+
+class ParticleEntity(Entity):
+
+    def __init__(self, xy, radius=0.25, velocity=PARTICLE_VELOCITY, energy=PARTICLE_ENERGY):
+        super().__init__(xy, (0, 0))
+        self.xy = xy
+        self.radius = radius
+        self.velocity = velocity
+        self.energy = energy
+
+        self.t = 0
+        self.duration = PARTICLE_DURATION
+
+    def build_box2d_obj(self, world) -> Box2D.b2Body:
+        body = make_dynamic_circle_body(
+            world, self.xy, self.radius, (255, 0, 0),
+            linear_damping=0, angular_damping=0, density=0.001, restitution=1,
+            category_bits=PARTICLE_CATEGORY, mask_bits=WALL_CATEGORY, group_index=PARTICLE_GROUP
+        )
+        angle = random.random() * math.pi * 2
+        body.linearVelocity = Box2D.b2Vec2(math.cos(angle) * self.velocity * BOX2D_SCALE_FACTOR,
+                                           math.sin(angle) * self.velocity * BOX2D_SCALE_FACTOR)
+        return body
+
+    def update(self, dt, level, **kwargs):
+        self.t += dt
+        if self.duration < self.t:
+            level.remove_entity(self)
+
+    def render(self, surf):
+        cx, cy = self.get_center_xy_on_screen()
+        surf.set_at((int(cx), int(cy)), (255, 0, 0))
+
+
 class ParticleEmitter(Entity):
 
     def __init__(self, xy, dims=(3, 3), weight=1):
@@ -357,12 +412,14 @@ class ParticleEmitter(Entity):
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
-        return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0))
+        return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0),
+                                        category_bits=EMITTER_CATEGORY, mask_bits=SOLID_OBJECTS)
 
     def spawn_particle(self, level: 'Level', n=1):
         c_xy = self.get_center()
         for _ in range(n):
-            level.particles.add_particle(c_xy, PARTICLE_VELOCITY)
+            # level.particles.add_particle(c_xy, PARTICLE_VELOCITY)
+            level.add_entity(ParticleEntity(c_xy))
 
 
 class ParticleAbsorber(Entity):
@@ -383,6 +440,14 @@ class ParticleAbsorber(Entity):
     def update(self, dt, level, **kwargs):
         super().update(dt, level, **kwargs)
         self.energy_accum *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
+
+
+def tint(c1, c2, strength, max_shift=255):
+    r1, g1, b1 = c1
+    r2, g2, b2 = c2
+    return (int(r1 + min(max_shift, strength * (r2 - r1))),
+            int(g1 + min(max_shift, strength * (g2 - g1))),
+            int(b1 + min(max_shift, strength * (b2 - b1))))
 
 
 class PolygonEntity(Entity):
@@ -413,8 +478,12 @@ class PolygonEntity(Entity):
         chull.add_all(top_pts)
         hull_pts = [pygame.Vector2(xy) for xy in chull.get_hull_points()]
 
+        tint_color = (255, 0, 0)
+        tint_strength = 0.99
+        tnt = lambda c: tint(c, tint_color, tint_strength, max_shift=64)
+
         pygame.draw.polygon(surf, (0, 0, 0), hull_pts, width=3)
-        pygame.draw.polygon(surf, (47, 47, 47), hull_pts)
+        pygame.draw.polygon(surf, tnt((47, 47, 47)), hull_pts)
 
         min_x = float('inf')
         max_x = -float('inf')
@@ -427,8 +496,8 @@ class PolygonEntity(Entity):
             if min_x < base_xy[0] < max_x:
                 pygame.draw.line(surf, (0, 0, 0), base_xy, top_pts[i])
 
-        pygame.draw.polygon(surf, (90, 90, 90), top_pts)
-        pygame.draw.polygon(surf, (195, 195, 195), top_pts, width=1)
+        pygame.draw.polygon(surf, tnt((90, 90, 90)), top_pts)
+        pygame.draw.polygon(surf, tnt((195, 195, 195)), top_pts, width=1)
 
 
 class Player(ParticleAbsorber):
@@ -483,7 +552,8 @@ class Player(ParticleAbsorber):
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
-        return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0))
+        return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0),
+                                        category_bits=PLAYER_CATEGORY, mask_bits=SOLID_OBJECTS)
 
     def get_display_angle(self) -> float:
         if self.grab_joint is not None:
@@ -511,6 +581,9 @@ class AnimationEntity(Entity):
         self.radius = radius
         self.color = color
         self.duration = duration
+
+    def get_render_layer(self):
+        return 5
 
     def get_prog(self) -> float:
         if self.duration > 0:
@@ -681,7 +754,7 @@ class Level:
 
     def render_entities(self, surf: pygame.Surface):
         all_ents = [ent for ent in self.all_entities()]
-        all_ents.sort(key=lambda e: e.get_center()[1])
+        all_ents.sort(key=lambda e: e.get_center()[1] + 10_000 * e.get_render_layer())
         for ent in all_ents:
             ent.render(surf)
 

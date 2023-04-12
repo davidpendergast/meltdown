@@ -45,8 +45,9 @@ WALL_CATEGORY = 0x0001
 PARTICLE_CATEGORY = 0x0002
 EMITTER_CATEGORY = 0x0004
 PLAYER_CATEGORY = 0x0008
+CRYSTAL_CATEGORY = 0x0016
 
-SOLID_OBJECTS = EMITTER_CATEGORY | PLAYER_CATEGORY | WALL_CATEGORY
+SOLID_OBJECTS = EMITTER_CATEGORY | PLAYER_CATEGORY | WALL_CATEGORY | CRYSTAL_CATEGORY
 ALL_OBJECTS = SOLID_OBJECTS | PARTICLE_CATEGORY
 
 class ParticleArray:
@@ -161,6 +162,9 @@ class Spritesheet:
     bar_empty = None
     bar_full = None
 
+    n_values = 10
+    crystals = {}  # (type, value) -> img, base_img
+
     @staticmethod
     def load(filepath):
         def scale(surf, factor):
@@ -177,6 +181,14 @@ class Spritesheet:
         Spritesheet.skull_icon = scale(img.subsurface([17 + 46, y, 17, 17]), bar_sc)
         Spritesheet.bar_empty = scale(img.subsurface([17, y, 46, 17]), bar_sc)
         Spritesheet.bar_full = scale(img.subsurface([15, y + 16, 50, 17]), bar_sc)
+
+        for i in range(10):
+            y = 64 + (i % 5) * 32
+            x = 0 + 128 * (i // 5)
+            base_img = img.subsurface([x + 96, y + 13, 16, 19])
+            for t in range(3):
+                crystal_img = img.subsurface([x + 32 * t, y, 32, 32])
+                Spritesheet.crystals[(t, Spritesheet.n_values - i - 1)] = crystal_img, base_img
 
 
 ENT_ID_CNT = 0
@@ -440,6 +452,35 @@ class ParticleAbsorber(Entity):
     def update(self, dt, level, **kwargs):
         super().update(dt, level, **kwargs)
         self.energy_accum *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
+
+
+class CrystalEntity(ParticleAbsorber):
+
+    def __init__(self, xy, crystal_type=-1, max_energy=MAX_DOSE * 3, **kwargs):
+        super().__init__(xy, dims=(3, 3), **kwargs)
+        self.max_energy = max_energy
+        self.crystal_type = int(3 * random.random()) if crystal_type < 0 else crystal_type
+
+    def build_box2d_obj(self, world) -> Box2D.b2Body:
+        x, y = self._xy
+        w, h = self.dims
+        pts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+        return make_static_polygon_body(world, pts, color=(0, 255, 0),
+                                        category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS)
+
+    def get_prog(self):
+        return max(0.0, min(1.0, self.energy_accum / self.max_energy))
+
+    def update(self, dt, level, **kwargs):
+        super().update(dt, level)
+
+    def render(self, surf):
+        cx, cy = self.get_center_xy_on_screen()
+        fill_level = int(self.get_prog() * Spritesheet.n_values)
+        spr, base_spr = Spritesheet.crystals[(self.crystal_type, fill_level)]
+
+        surf.blit(base_spr, (cx - base_spr.get_width() // 2, cy - int(8 * base_spr.get_height() / 19)))
+        surf.blit(spr, (cx - spr.get_width() // 2, cy - spr.get_height() + 4))
 
 
 def tint(c1, c2, strength, max_shift=255):
@@ -773,6 +814,9 @@ def load_level_from_file(filename) -> Level:
                 img.set_at((x, y), (255, 255, 255))
             elif clr == (0, 0, 255):
                 res.add_entity(Player((x + 1, y + 1)), immediately=True)
+                img.set_at((x, y), (255, 255, 255))
+            elif clr == (0, 255, 0):
+                res.add_entity(CrystalEntity((x + 0.5, y + 0.5)), immediately=True)
                 img.set_at((x, y), (255, 255, 255))
             elif clr == (0, 0, 0):
                 pts = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)]

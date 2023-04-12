@@ -169,9 +169,18 @@ class Spritesheet:
         Spritesheet.bar_full = scale(img.subsurface([15, y + 16, 50, 17]), bar_sc)
 
 
+ENT_ID_CNT = 0
+
+def next_ent_id():
+    global ENT_ID_CNT
+    ENT_ID_CNT += 1
+    return ENT_ID_CNT - 1
+
+
 class Entity:
 
     def __init__(self, xy, dims=(1, 1)):
+        self.uid = next_ent_id()
         self._xy = xy  # top left corner
         self.dims = dims
         self.body = None
@@ -193,12 +202,12 @@ class Entity:
     def update(self, dt, level, **kwargs):
         pass
 
-    def render(self, surf, color=(255, 255, 255)):
+    def render(self, surf):
         rect = self.get_rect()
-        pygame.draw.rect(surf, color, (int(rect[0] * DISPLAY_SCALE_FACTOR),
-                                       int(rect[1] * DISPLAY_SCALE_FACTOR),
-                                       max(1, round(rect[2] * DISPLAY_SCALE_FACTOR)),
-                                       max(1, round(rect[3] * DISPLAY_SCALE_FACTOR))))
+        pygame.draw.rect(surf, "white", (int(rect[0] * DISPLAY_SCALE_FACTOR),
+                                         int(rect[1] * DISPLAY_SCALE_FACTOR),
+                                         max(1, round(rect[2] * DISPLAY_SCALE_FACTOR)),
+                                         max(1, round(rect[3] * DISPLAY_SCALE_FACTOR))))
 
     def get_center_xy_on_screen(self):
         cx, cy = self.get_center()
@@ -227,6 +236,12 @@ class Entity:
             print(f"Failed to resolve collision at: {self._xy}")
             return False
         return True
+
+    def __hash__(self):
+        return self.uid
+
+    def __eq__(self, other):
+        return self.uid == other.uid
 
 
 def make_dynamic_polygon_body(world, polygon, color=(125, 255, 125)) -> Box2D.b2Body:
@@ -322,17 +337,18 @@ class ParticleEmitter(Entity):
         super().__init__((xy[0] - dims[0] / 2, xy[1] - dims[1] / 2), dims=dims)
         self.weight = weight
         self.accum_t = 0
+        self.cur_rate = 1
 
-    def update(self, dt, level, rate=1, **kwargs):
+    def update(self, dt, level, **kwargs):
         super().update(dt, level)
         self.accum_t += dt
-        n_to_spawn = int(rate * self.accum_t)
-        self.accum_t -= n_to_spawn / rate
+        n_to_spawn = int(self.cur_rate * self.accum_t)
+        self.accum_t -= n_to_spawn / self.cur_rate
 
         for _ in range(n_to_spawn):
             self.spawn_particle(level)
 
-    def render(self, surf, color=(255, 0, 0)):
+    def render(self, surf):
         center_xy = self.get_center_xy_on_screen()
         sprite = Spritesheet.barrel
         blit_xy = (center_xy[0] - sprite.get_width() // 2,
@@ -388,7 +404,7 @@ class PolygonEntity(Entity):
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         return make_dynamic_polygon_body(world, self._poly_list, (255, 255, 255))
 
-    def render(self, surf, color=(255, 255, 255)):
+    def render(self, surf):
         base_pts = [self.convert_to_screen_pt(xy) for xy in self.get_pts()]
         top_pts = [(x, y - 8) for (x, y) in base_pts]
 
@@ -443,7 +459,8 @@ class Player(ParticleAbsorber):
         else:
             self.resolve_rect_collision_with_level(level)
 
-        if pygame.K_SPACE in KEYS_PRESSED_THIS_FRAME:
+        if pygame.K_SPACE in KEYS_PRESSED_THIS_FRAME or \
+                (pygame.K_SPACE in KEYS_HELD_THIS_FRAME and self.grab_joint is None):
             grab_pt = pygame.Vector2(self.get_center()) + pygame.Vector2(self.last_dir).normalize() * (self.grab_reach + self.dims[0] / 2)
             fix = [f for f in all_fixtures_at_point(level.world, grab_pt)]
             if self.grab_joint is not None:
@@ -458,7 +475,7 @@ class Player(ParticleAbsorber):
                     anchorA=Box2D.b2Vec2(*c_xy),
                     anchorB=Box2D.b2Vec2(*o_xy),
                     collideConnected=True)
-            print(f"GRABBED: {fix}")
+                level.add_entity(AnimationEntity(grab_pt, color=(225, 225, 225), radius=8, duration=0.25))
         elif pygame.K_SPACE in KEYS_RELEASED_THIS_FRAME:
             if self.grab_joint is not None:
                 level.world.DestroyJoint(self.grab_joint)
@@ -478,7 +495,7 @@ class Player(ParticleAbsorber):
                 return vec.as_polar()[1]
         return self.last_dir.as_polar()[1]
 
-    def render(self, surf, color=(0, 0, 255)):
+    def render(self, surf):
         center_xy_on_screen = self.get_center_xy_on_screen()
         angle = self.get_display_angle()
         sprite = pygame.transform.rotate(Spritesheet.player, -angle + 90)
@@ -486,6 +503,30 @@ class Player(ParticleAbsorber):
                    center_xy_on_screen[1] - sprite.get_height() // 2)
         surf.blit(sprite, blit_xy)
 
+class AnimationEntity(Entity):
+
+    def __init__(self, xy, radius=8, color=(255, 255, 255), duration=1.0):
+        super().__init__(xy, (0, 0))
+        self.t = 0
+        self.radius = radius
+        self.color = color
+        self.duration = duration
+
+    def get_prog(self) -> float:
+        if self.duration > 0:
+            return min(1.0, max(0.0, self.t / self.duration))
+        else:
+            return 0.0
+
+    def update(self, dt, level, **kwargs):
+        self.t += dt
+        if 0 < self.duration < self.t:
+            level.remove_entity(self)
+
+    def render(self, surf):
+        cx, cy = self.get_center_xy_on_screen()
+        t = self.get_prog()
+        pygame.draw.circle(surf, self.color, (cx, cy), self.radius * (1 - math.cos(t * math.pi * 2)), width=1)
 
 class Level:
 
@@ -496,9 +537,10 @@ class Level:
         self.spatial_hash = {}
 
         self.player = None
-        self.absorbers = []
-        self.emitters = []
-        self.polygons = []
+        self.entities = set()
+
+        self._ents_to_add = set()
+        self._ents_to_remove = set()
 
         self.geometry = pygame.Surface(size).convert()
         self.energy = numpy.zeros(size, dtype=numpy.float16)
@@ -506,58 +548,72 @@ class Level:
         self.world = Box2D.b2World(gravity=(0, 0))
 
     def update(self, dt):
-        self.update_emitters(dt)
-        self.update_particles(dt)
-        if self.player is not None:
-            self.player.update(dt, self)
-        self.update_absorbers(dt)
-        self.update_polygons(dt)
-
-        self.energy *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
-
         self.world.Step(dt, 6, 2)
 
-    def update_emitters(self, dt):
-        total_weight = sum((emit.weight for emit in self.emitters), start=0)
-        for emitter in self.emitters:
-            rate = self.spawn_rate * emitter.weight / total_weight
-            emitter.update(dt, self, rate=rate)
+        self.update_entities(dt)
+        self.energy *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
+
+        for ent in self._ents_to_add:
+            self.add_entity(ent, immediately=True)
+        self._ents_to_add.clear()
+        for ent in self._ents_to_remove:
+            self.remove_entity(ent, immediately=True)
+        self._ents_to_remove.clear()
+
+    def update_entities(self, dt):
+        emitters = []
+        absorbers = []
+        for ent in self.entities:
+            if isinstance(ent, ParticleEmitter):
+                emitters.append(ent)
+            if isinstance(ent, ParticleAbsorber):
+                absorbers.append(ent)
+
+        self.update_emitters(dt, emitters)
+        self.update_particles(dt)
+
+        for ent in self.entities:
+            ent.update(dt, self)
+
+        self.update_absorbers(dt, absorbers)
+
+    def update_emitters(self, dt, emitters):
+        total_weight = sum((emit.weight for emit in emitters), start=0)
+        for emitter in emitters:
+            emitter.cur_rate = self.spawn_rate * emitter.weight / total_weight
 
     def update_particles(self, dt):
         self.particles.update(dt)
         self._handle_collisions(dt)
 
-    def update_polygons(self, dt):
-        for poly in self.polygons:
-            poly.update(dt, self)
-
-    def update_absorbers(self, dt):
-        for absorber in self.absorbers:
+    def update_absorbers(self, dt, absorbers):
+        for absorber in absorbers:
             for idx in self.all_particles_indices_in_rect(absorber.get_rect()):
                 absorber.absorb(dt, self, idx)
 
-    def add_entity(self, ent):
-        ent.body = ent.build_box2d_obj(self.world)
-        if isinstance(ent, ParticleEmitter):
-            self.emitters.append(ent)
-        if isinstance(ent, ParticleAbsorber):
-            self.absorbers.append(ent)
-        if isinstance(ent, Player):
-            if self.player is not None:
-                raise ValueError("level already has a player")
-            self.player = ent
-        if isinstance(ent, PolygonEntity):
-            self.polygons.append(ent)
+    def add_entity(self, ent, immediately=False):
+        if immediately:
+            if ent not in self.entities:
+                ent.body = ent.build_box2d_obj(self.world)
+                self.entities.add(ent)
 
-    def remove_entity(self, ent):
-        if isinstance(ent, ParticleEmitter):
-            self.emitters.remove(ent)
-        if isinstance(ent, ParticleAbsorber):
-            self.absorbers.remove(ent)
-        if isinstance(ent, Player):
-            self.player = None  # hope it's the same player
-        if isinstance(ent, PolygonEntity):
-            self.polygons.remove(ent)
+                if isinstance(ent, Player):
+                    if self.player is not None:
+                        raise ValueError("level already has a player")
+                    self.player = ent
+        else:
+            self._ents_to_add.add(ent)
+
+    def remove_entity(self, ent, immediately=False):
+        if immediately:
+            if ent in self.entities:
+                self.entities.remove(ent)
+                if ent.body is not None:
+                    self.world.DestroyBody(ent.body)
+                if isinstance(ent, Player):
+                    self.player = None  # hope it's the same player
+        else:
+            self._ents_to_remove.add(ent)
 
     def _handle_collisions(self, dt):
         self.spatial_hash.clear()
@@ -620,22 +676,8 @@ class Level:
             rbuf[:] = (numpy.clip(self.energy / max_energy, 0, 1) * 255).astype(numpy.int16)
 
     def all_entities(self):
-        seen = set()
-        if self.player is not None:
-            yield self.player
-            seen.add(id(self.player))
-        for emitter in self.emitters:
-            if id(emitter) not in seen:
-                yield emitter
-                seen.add(id(emitter))
-        for absorber in self.absorbers:
-            if id(absorber) not in seen:
-                yield absorber
-                seen.add(id(absorber))
-        for polygon in self.polygons:
-            if id(polygon) not in seen:
-                yield polygon
-                seen.add(id(polygon))
+        for ent in self.entities:
+            yield ent
 
     def render_entities(self, surf: pygame.Surface):
         all_ents = [ent for ent in self.all_entities()]
@@ -654,10 +696,10 @@ def load_level_from_file(filename) -> Level:
         for x in range(size[0]):
             clr = img.get_at((x, y))
             if clr == (255, 0, 0):
-                res.add_entity(ParticleEmitter((x + 0.5, y + 0.5)))
+                res.add_entity(ParticleEmitter((x + 0.5, y + 0.5)), immediately=True)
                 img.set_at((x, y), (255, 255, 255))
             elif clr == (0, 0, 255):
-                res.add_entity(Player((x + 1, y + 1)))
+                res.add_entity(Player((x + 1, y + 1)), immediately=True)
                 img.set_at((x, y), (255, 255, 255))
             elif clr == (0, 0, 0):
                 pts = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)]
@@ -671,7 +713,7 @@ def load_level_from_file(filename) -> Level:
                 img.set_at((x, y), (255, 255, 255))
 
     for clr in other_colors:
-        res.add_entity(PolygonEntity(other_colors[clr]))
+        res.add_entity(PolygonEntity(other_colors[clr]), immediately=True)
 
     res.geometry.blit(img, (0, 0))
     return res
@@ -793,17 +835,18 @@ if __name__ == "__main__":
             screen.blit(pygame.transform.scale_by(rad_surf, (DISPLAY_SCALE_FACTOR,) * 2), (0, 0))
             level.render_entities(screen)
 
+            dose_pcnt = 1 if level.player is None else level.player.energy_accum / MAX_DOSE
             dose_bar_size = (2 * SCREEN_DIMS[0] // 3, Spritesheet.heart_icon.get_height())
             render_dose_bar(screen, (SCREEN_DIMS[0] // 2 - dose_bar_size[0] // 2,
                                      SCREEN_DIMS[1] - EXTRA_SCREEN_HEIGHT // 2 - dose_bar_size[1] // 2,
-                                     dose_bar_size[0], dose_bar_size[1]),
-                            level.player.energy_accum / MAX_DOSE)
+                                     dose_bar_size[0], dose_bar_size[1]), dose_pcnt)
 
         pygame.display.flip()
 
         if frm_cnt % 15 == 14:
             pygame.display.set_caption(f"{GAME_TITLE} (FPS={clock.get_fps():.2f}, "
-                                       f"N={len(level.particles)}, pE={level.player.energy_accum:.2f})")
+                                       f"N={len(level.particles)}, "
+                                       f"pE={0 if level.player is None else level.player.energy_accum:.2f})")
 
         dt = clock.tick() / 1000
         frm_cnt += 1

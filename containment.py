@@ -8,7 +8,7 @@ import os
 import Box2D
 
 import src.utils as utils
-import src.convexhull as convexhull
+import src.convexhull2 as convexhull
 import src.readme_writer as readme_writer
 
 IS_DEV = os.path.exists(".gitignore")
@@ -30,19 +30,25 @@ KEYS_HELD_THIS_FRAME = set()
 KEYS_PRESSED_THIS_FRAME = set()
 KEYS_RELEASED_THIS_FRAME = set()
 
-AMBIENT_ENERGY_DECAY_RATE = 0.2
-
 SPAWN_RATE = 100
 PARTICLE_DURATION = 5
 
 PARTICLE_VELOCITY = 20
 PARTICLE_ENERGY = 400
-ENERGY_TRANSFER_ON_COLLISION = 0.1
+ENERGY_TRANSFER_ON_COLLISION = 0.05
+
+RADIATION_COLOR = (255, 0, 0)
+
+AMBIENT_ENERGY_DECAY_RATE = 0.15
+
+CRYSTAL_LIMIT = PARTICLE_ENERGY * 33
+WALL_LIMIT_PER_KG = PARTICLE_ENERGY * 12
+PLAYER_LIMIT = PARTICLE_ENERGY * 10
+
+WALL_HEIGHT = 8
 
 MOVE_RESOLUTION = 4
 MOVE_SPEED = 16
-
-MAX_DOSE = PARTICLE_ENERGY * 4
 
 PARTICLE_GROUP = -1
 NORMAL_GROUP = 1
@@ -207,7 +213,7 @@ def next_ent_id():
 
 class Entity:
 
-    def __init__(self, xy, dims=(1, 1)):
+    def __init__(self, xy=(0, 0), dims=(1, 1), **kwargs):
         self.uid = next_ent_id()
         self._xy = xy  # top left corner
         self.dims = dims
@@ -374,7 +380,7 @@ def all_fixtures_at_point(world: Box2D.b2World, pt, exact=True, cond=None, conti
 class ParticleEntity(Entity):
 
     def __init__(self, xy, radius=0.25, velocity=PARTICLE_VELOCITY, energy=PARTICLE_ENERGY):
-        super().__init__(xy, (0, 0))
+        super().__init__(xy=xy, dims=(0, 0))
         self.xy = xy
         self.radius = radius
         self.velocity = velocity
@@ -387,7 +393,8 @@ class ParticleEntity(Entity):
         body = make_dynamic_circle_body(
             world, self.xy, self.radius, (255, 0, 0),
             linear_damping=0, angular_damping=0, density=0.001, restitution=1,
-            category_bits=PARTICLE_CATEGORY, mask_bits=WALL_CATEGORY, group_index=PARTICLE_GROUP
+            category_bits=PARTICLE_CATEGORY, mask_bits=WALL_CATEGORY|PLAYER_CATEGORY|CRYSTAL_CATEGORY,
+            group_index=PARTICLE_GROUP
         )
         angle = random.random() * math.pi * 2
         body.linearVelocity = Box2D.b2Vec2(math.cos(angle) * self.velocity * BOX2D_SCALE_FACTOR,
@@ -396,18 +403,21 @@ class ParticleEntity(Entity):
 
     def update(self, dt, level, **kwargs):
         self.t += dt
-        if self.duration < self.t:
+        if self.duration < self.t or self.energy < PARTICLE_ENERGY / 100:
             level.remove_entity(self)
+
+    def get_color(self):
+        return tint(RADIATION_COLOR, (0, 0, 0), 0.666 * (1 - (self.energy / PARTICLE_ENERGY)))
 
     def render(self, surf):
         cx, cy = self.get_center_xy_on_screen()
-        surf.set_at((int(cx), int(cy)), (255, 0, 0))
+        surf.set_at((int(cx), int(cy) - WALL_HEIGHT // 2), self.get_color())
 
 
 class ParticleEmitter(Entity):
 
     def __init__(self, xy, dims=(3, 3), weight=1):
-        super().__init__((xy[0] - dims[0] / 2, xy[1] - dims[1] / 2), dims=dims)
+        super().__init__(xy=(xy[0] - dims[0] / 2, xy[1] - dims[1] / 2), dims=dims)
         self.weight = weight
         self.accum_t = 0
         self.cur_rate = 1
@@ -431,40 +441,54 @@ class ParticleEmitter(Entity):
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
         return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0),
-                                        category_bits=EMITTER_CATEGORY, mask_bits=SOLID_OBJECTS)
+                                        category_bits=EMITTER_CATEGORY, mask_bits=SOLID_OBJECTS,
+                                        group_index=PARTICLE_GROUP)
 
     def spawn_particle(self, level: 'Level', n=1):
         c_xy = self.get_center()
         for _ in range(n):
-            # level.particles.add_particle(c_xy, PARTICLE_VELOCITY)
             level.add_entity(ParticleEntity(c_xy))
 
 
 class ParticleAbsorber(Entity):
 
-    def __init__(self, xy, absorb_rate=1, **kwargs):
-        super().__init__(xy, **kwargs)
-        self.absorb_rate = absorb_rate
+    def __init__(self, xy=(0, 0), energy_limit=0, **kwargs):
+        super().__init__(xy=xy, **kwargs)
         self.energy_accum = 0
+        self.energy_limit = energy_limit
+        self.energy_overfill_limit = 1.333
         self.decay_rate = AMBIENT_ENERGY_DECAY_RATE
-        self.update_particles = True
 
-    def absorb(self, dt, level, p_idx):
-        to_absorb = level.particles.energy[p_idx] * min(1, self.absorb_rate * dt)
+    def absorb_particle(self, p_ent: ParticleEntity):
+        to_absorb = p_ent.energy * ENERGY_TRANSFER_ON_COLLISION
+        p_ent.energy -= to_absorb
         self.energy_accum += to_absorb
-        if self.update_particles:
-            level.particles.energy[p_idx] -= to_absorb
+
+    def get_energy_pcnt(self):
+        if self.energy_limit <= 0:
+            return 0
+        else:
+            return max(0.0, min(1.0, self.energy_accum / self.energy_limit))
 
     def update(self, dt, level, **kwargs):
         super().update(dt, level, **kwargs)
+
+        if self.body is not None:
+            for contact_edge in self.body.contacts:
+                contact = contact_edge.contact
+                other_ent = contact.fixtureB.body.userData['entity']
+                if isinstance(other_ent, ParticleEntity):
+                    self.absorb_particle(other_ent)
+
         self.energy_accum *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
+        if self.energy_accum >= self.energy_overfill_limit * self.energy_limit:
+            self.energy_accum = max(0.0, self.energy_overfill_limit * self.energy_limit)
 
 
 class CrystalEntity(ParticleAbsorber):
 
-    def __init__(self, xy, crystal_type=-1, max_energy=MAX_DOSE * 3, **kwargs):
-        super().__init__(xy, dims=(3, 3), **kwargs)
-        self.max_energy = max_energy
+    def __init__(self, xy, crystal_type=-1, energy_limit=CRYSTAL_LIMIT, **kwargs):
+        super().__init__(xy=xy, dims=(3, 3), energy_limit=energy_limit, **kwargs)
         self.crystal_type = int(3 * random.random()) if crystal_type < 0 else crystal_type
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
@@ -474,15 +498,16 @@ class CrystalEntity(ParticleAbsorber):
         return make_static_polygon_body(world, pts, color=(0, 255, 0),
                                         category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS)
 
-    def get_prog(self):
-        return max(0.0, min(1.0, self.energy_accum / self.max_energy))
-
     def update(self, dt, level, **kwargs):
+        was_full = self.get_energy_pcnt() >= 1
         super().update(dt, level)
+
+        if not was_full and self.get_energy_pcnt() >= 1:
+            level.add_entity(AnimationEntity(self.get_center(), duration=0.5))
 
     def render(self, surf):
         cx, cy = self.get_center_xy_on_screen()
-        fill_level = int(self.get_prog() * Spritesheet.n_values)
+        fill_level = int(self.get_energy_pcnt() * Spritesheet.n_values - 0.0001)
         spr, base_spr = Spritesheet.crystals[(self.crystal_type, fill_level)]
 
         surf.blit(base_spr, (cx - base_spr.get_width() // 2, cy - int(8 * base_spr.get_height() / 19)))
@@ -497,14 +522,17 @@ def tint(c1, c2, strength, max_shift=255):
             int(b1 + min(max_shift, strength * (b2 - b1))))
 
 
-class PolygonEntity(Entity):
+class WallEntity(Entity):
 
-    def __init__(self, poly_list):
-        super().__init__(poly_list[0])  # TODO calc centroid for xy
+    def __init__(self, poly_list, **kwargs):
+        super().__init__(**kwargs)
 
-        chull = convexhull.ConvexHull()
-        chull.add_all(pt for pt in poly_list)
-        self._poly_list = chull.get_hull_points()
+        # chull = convexhull.ConvexHull(points=poly_list, check_colinear=True)
+        #self._poly_list = chull.get_hull_points()
+        self._poly_list = convexhull.convexHull(poly_list)
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self._poly_list})"
 
     def get_pts(self):
         if self.body is not None:
@@ -514,20 +542,18 @@ class PolygonEntity(Entity):
             return self._poly_list
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
-        return make_dynamic_polygon_body(world, self._poly_list, (255, 255, 255))
+        return make_static_polygon_body(world, self._poly_list, (255, 255, 255))
+
+    def tint_color(self, c):
+        return tint(c, (0, 0, 0), 0.666)
 
     def render(self, surf):
         base_pts = [self.convert_to_screen_pt(xy) for xy in self.get_pts()]
-        top_pts = [(x, y - 8) for (x, y) in base_pts]
+        top_pts = [(x, y - WALL_HEIGHT) for (x, y) in base_pts]
 
-        chull = convexhull.ConvexHull()
-        chull.add_all(base_pts)
-        chull.add_all(top_pts)
-        hull_pts = [pygame.Vector2(xy) for xy in chull.get_hull_points()]
+        hull_pts = [pygame.Vector2(xy) for xy in convexhull.convexHull(base_pts + top_pts)]
 
-        tint_color = (255, 0, 0)
-        tint_strength = 0.99
-        tnt = lambda c: tint(c, tint_color, tint_strength, max_shift=64)
+        tnt = self.tint_color
 
         pygame.draw.polygon(surf, (0, 0, 0), hull_pts, width=3)
         pygame.draw.polygon(surf, tnt((47, 47, 47)), hull_pts)
@@ -547,10 +573,25 @@ class PolygonEntity(Entity):
         pygame.draw.polygon(surf, tnt((195, 195, 195)), top_pts, width=1)
 
 
+class PolygonEntity(WallEntity, ParticleAbsorber):
+
+    def __init__(self, poly_list, energy_limit=0, **kwargs):
+        super().__init__(poly_list=poly_list, energy_limit=energy_limit, **kwargs)
+
+    def tint_color(self, c):
+        tint_color = (255, 0, 0)
+        tint_strength = self.get_energy_pcnt()
+        return tint(c, tint_color, tint_strength, max_shift=64)
+
+    def build_box2d_obj(self, world) -> Box2D.b2Body:
+        res = make_dynamic_polygon_body(world, self._poly_list, (255, 255, 255))
+        self.energy_limit = float(res.mass * WALL_LIMIT_PER_KG)
+        return res
+
 class Player(ParticleAbsorber):
 
     def __init__(self, xy, dims=(2, 2)):
-        super().__init__(xy, dims=dims)
+        super().__init__(xy=xy, dims=dims, energy_limit=PLAYER_LIMIT)
         self.last_dir = pygame.Vector2(0, 1)
         self.grab_reach = 0.666
         self.grab_joint = None
@@ -578,7 +619,8 @@ class Player(ParticleAbsorber):
         if pygame.K_SPACE in KEYS_PRESSED_THIS_FRAME or \
                 (pygame.K_SPACE in KEYS_HELD_THIS_FRAME and self.grab_joint is None):
             grab_pt = pygame.Vector2(self.get_center()) + pygame.Vector2(self.last_dir).normalize() * (self.grab_reach + self.dims[0] / 2)
-            fix = [f for f in all_fixtures_at_point(level.world, grab_pt)]
+            fix = [f for f in all_fixtures_at_point(level.world, grab_pt)
+                   if not isinstance(f.body.userData['entity'], ParticleEntity)]
             if self.grab_joint is not None:
                 level.world.DestroyJoint(self.grab_joint)
                 self.grab_joint = None
@@ -620,10 +662,11 @@ class Player(ParticleAbsorber):
                    center_xy_on_screen[1] - sprite.get_height() // 2)
         surf.blit(sprite, blit_xy)
 
+
 class AnimationEntity(Entity):
 
     def __init__(self, xy, radius=8, color=(255, 255, 255), duration=1.0):
-        super().__init__(xy, (0, 0))
+        super().__init__(xy=xy, dims=(0, 0))
         self.t = 0
         self.radius = radius
         self.color = color
@@ -714,7 +757,10 @@ class Level:
     def add_entity(self, ent, immediately=False):
         if immediately:
             if ent not in self.entities:
+                # print(f"Adding entity: {ent}")
                 ent.body = ent.build_box2d_obj(self.world)
+                if ent.body is not None:
+                    ent.body.userData['entity'] = ent
                 self.entities.add(ent)
 
                 if isinstance(ent, Player):
@@ -824,19 +870,19 @@ def load_level_from_file(filename) -> Level:
             elif clr == (0, 255, 0):
                 res.add_entity(CrystalEntity((x + 0.5, y + 0.5)), immediately=True)
                 img.set_at((x, y), (255, 255, 255))
-            elif clr == (0, 0, 0):
-                pts = [(x, y), (x + 1, y), (x + 1, y + 1), (x, y + 1)]
-                make_static_polygon_body(res.world, pts, color=(96, 96, 96))
             elif clr == (255, 255, 255):
-                pass  # empty
+                pass  # air
             else:
                 if clr.rgb not in other_colors:
                     other_colors[clr.rgb] = []
-                other_colors[clr.rgb].append((x, y))
+                other_colors[clr.rgb].append((x + 0.5, y + 0.5))
                 img.set_at((x, y), (255, 255, 255))
 
     for clr in other_colors:
-        res.add_entity(PolygonEntity(other_colors[clr]), immediately=True)
+        if clr[0] == clr[1] == clr[2]:
+            res.add_entity(WallEntity(other_colors[clr]), immediately=True)
+        else:
+            res.add_entity(PolygonEntity(other_colors[clr]), immediately=True)
 
     res.geometry.blit(img, (0, 0))
     return res
@@ -958,7 +1004,7 @@ if __name__ == "__main__":
             screen.blit(pygame.transform.scale_by(rad_surf, (DISPLAY_SCALE_FACTOR,) * 2), (0, 0))
             level.render_entities(screen)
 
-            dose_pcnt = 1 if level.player is None else level.player.energy_accum / MAX_DOSE
+            dose_pcnt = 1 if level.player is None else level.player.get_energy_pcnt()
             dose_bar_size = (2 * SCREEN_DIMS[0] // 3, Spritesheet.heart_icon.get_height())
             render_dose_bar(screen, (SCREEN_DIMS[0] // 2 - dose_bar_size[0] // 2,
                                      SCREEN_DIMS[1] - EXTRA_SCREEN_HEIGHT // 2 - dose_bar_size[1] // 2,

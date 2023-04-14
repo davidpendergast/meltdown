@@ -67,6 +67,35 @@ def make_fancy_scaled_display(
     return res
 
 
+def lerp(start, end, t, clamp=True):
+    lower = min(start, end)
+    upper = max(start, end)
+    return max(lower, min(upper, start + t * (end - start)))
+
+
+def int_mults(v, a):
+    return tuple(int(v[i] * a) for i in range(len(v)))
+
+def int_sub(v1, v2):
+    return tuple(int(v1[i] - v2[i]) for i in range(len(v1)))
+
+
+def int_lerp(i1, i2, t):
+    return round(i1 + t * (i2 - i1))
+
+
+def int_lerps(v1, v2, t):
+    return tuple(int_lerp(v1[i], v2[i], t) for i in range(len(v1)))
+
+
+def tint_color(c1, c2, strength, max_shift=255):
+    r1, g1, b1 = c1
+    r2, g2, b2 = c2
+    return (int(r1 + min(max_shift, strength * (r2 - r1))),
+            int(g1 + min(max_shift, strength * (g2 - g1))),
+            int(b1 + min(max_shift, strength * (b2 - b1))))
+
+
 # yoinkers from https://stackoverflow.com/a/13790741
 def res_path(filepath):
     """ Get absolute path to resource, works for dev and for PyInstaller """

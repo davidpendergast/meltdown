@@ -7,71 +7,17 @@ import os
 
 import Box2D
 
+import const as const
 import src.utils as utils
 import src.convexhull2 as convexhull
-import src.readme_writer as readme_writer
 import src.sounds as sounds
-
-IS_DEV = os.path.exists(".gitignore")
-if IS_DEV:
-    readme_writer.write_basic_readme()
-
-GAME_TITLE = "Meltdown"
-
-LEVEL_DIR = "levels"
-SOUND_DIR = "assets/sounds"
-MAIN_SONG = "assets/music/001-electronica-gaming-edits.ogg"
-
-DIMS = (64, 48)
-DISPLAY_SCALE_FACTOR = 4
-EXTRA_SCREEN_HEIGHT = 48
-SCREEN_DIMS = (DISPLAY_SCALE_FACTOR * DIMS[0],
-               DISPLAY_SCALE_FACTOR * DIMS[1] + EXTRA_SCREEN_HEIGHT)
-
-MIN_FPS = 45
-
-BOX2D_SCALE_FACTOR = 1
-
-KEYS_HELD_THIS_FRAME = set()
-KEYS_PRESSED_THIS_FRAME = set()
-KEYS_RELEASED_THIS_FRAME = set()
-
-SPAWN_RATE = 100
-PARTICLE_DURATION = 5
-
-PARTICLE_VELOCITY = 20
-PARTICLE_ENERGY = 400
-ENERGY_TRANSFER_ON_COLLISION = 0.05
-
-RADIATION_COLOR = (255, 0, 0)
-
-AMBIENT_ENERGY_DECAY_RATE = 0.15
-
-CRYSTAL_LIMIT = PARTICLE_ENERGY * 33
-WALL_LIMIT_PER_KG = PARTICLE_ENERGY * 12
-PLAYER_LIMIT = PARTICLE_ENERGY * 10
-
-WALL_HEIGHT = 8
-
-MOVE_RESOLUTION = 4
-MOVE_SPEED = 16
-
-PARTICLE_GROUP = -1
-NORMAL_GROUP = 1
-
-WALL_CATEGORY = 0x0001
-PARTICLE_CATEGORY = 0x0002
-EMITTER_CATEGORY = 0x0004
-PLAYER_CATEGORY = 0x0008
-CRYSTAL_CATEGORY = 0x0016
-
-SOLID_OBJECTS = EMITTER_CATEGORY | PLAYER_CATEGORY | WALL_CATEGORY | CRYSTAL_CATEGORY
-ALL_OBJECTS = SOLID_OBJECTS | PARTICLE_CATEGORY
+import src.scenes as scenes
+from src.sprites import Spritesheet, UiSheet
 
 
 class ParticleArray:
 
-    def __init__(self, max_time_sec=PARTICLE_DURATION, cap=128):
+    def __init__(self, max_time_sec=const.PARTICLE_DURATION, cap=128):
         self.max_time_sec = max_time_sec
         self.start_idx = 0
         self.n = 0
@@ -164,50 +110,11 @@ class ParticleArray:
         self.ax[idx] = 0
         self.ay[idx] = 0
         self.t[idx] = 0
-        self.energy[idx] = PARTICLE_ENERGY
+        self.energy[idx] = const.PARTICLE_ENERGY
         self.n += 1
 
     def __repr__(self):
         return f"{type(self).__name__}({len(self)} Particles)"
-
-
-class Spritesheet:
-
-    player = None
-    barrel = None
-
-    heart_icon = None
-    skull_icon = None
-    bar_empty = None
-    bar_full = None
-
-    n_values = 10
-    crystals = {}  # (type, value) -> img, base_img
-
-    @staticmethod
-    def load(filepath):
-        def scale(surf, factor):
-            return pygame.transform.scale_by(surf, (factor, factor))
-        img = pygame.image.load(filepath).convert_alpha()
-
-        y = 0
-        Spritesheet.player = img.subsurface([0, y, 32, 32])
-        Spritesheet.barrel = img.subsurface([32, y, 32, 32])
-
-        y += 32
-        bar_sc = 2
-        Spritesheet.heart_icon = scale(img.subsurface([0, y, 17, 17]), bar_sc)
-        Spritesheet.skull_icon = scale(img.subsurface([17 + 46, y, 17, 17]), bar_sc)
-        Spritesheet.bar_empty = scale(img.subsurface([17, y, 46, 17]), bar_sc)
-        Spritesheet.bar_full = scale(img.subsurface([15, y + 16, 50, 17]), bar_sc)
-
-        for i in range(10):
-            y = 64 + (i % 5) * 32
-            x = 0 + 128 * (i // 5)
-            base_img = img.subsurface([x + 96, y + 13, 16, 19])
-            for t in range(3):
-                crystal_img = img.subsurface([x + 32 * t, y, 32, 32])
-                Spritesheet.crystals[(t, Spritesheet.n_values - i - 1)] = crystal_img, base_img
 
 
 ENT_ID_CNT = 0
@@ -236,7 +143,7 @@ class Entity:
     def get_center(self):
         if self.body is not None:
             pt_b2 = self.body.GetWorldPoint((0, 0))
-            return (pt_b2[0] / BOX2D_SCALE_FACTOR, pt_b2[1] / BOX2D_SCALE_FACTOR)
+            return (pt_b2[0] / const.BOX2D_SCALE_FACTOR, pt_b2[1] / const.BOX2D_SCALE_FACTOR)
         else:
             return (self._xy[0] + self.dims[0] / 2, self._xy[1] + self.dims[1] / 2)
 
@@ -248,17 +155,17 @@ class Entity:
 
     def render(self, surf):
         rect = self.get_rect()
-        pygame.draw.rect(surf, "white", (int(rect[0] * DISPLAY_SCALE_FACTOR),
-                                         int(rect[1] * DISPLAY_SCALE_FACTOR),
-                                         max(1, round(rect[2] * DISPLAY_SCALE_FACTOR)),
-                                         max(1, round(rect[3] * DISPLAY_SCALE_FACTOR))))
+        pygame.draw.rect(surf, "white", (int(rect[0] * const.DISPLAY_SCALE_FACTOR),
+                                         int(rect[1] * const.DISPLAY_SCALE_FACTOR),
+                                         max(1, round(rect[2] * const.DISPLAY_SCALE_FACTOR)),
+                                         max(1, round(rect[3] * const.DISPLAY_SCALE_FACTOR))))
 
     def get_center_xy_on_screen(self):
         cx, cy = self.get_center()
-        return (DISPLAY_SCALE_FACTOR * cx, DISPLAY_SCALE_FACTOR * cy)
+        return (const.DISPLAY_SCALE_FACTOR * cx, const.DISPLAY_SCALE_FACTOR * cy)
 
     def convert_to_screen_pt(self, xy):
-        return DISPLAY_SCALE_FACTOR * xy[0], DISPLAY_SCALE_FACTOR * xy[1]
+        return const.DISPLAY_SCALE_FACTOR * xy[0], const.DISPLAY_SCALE_FACTOR * xy[1]
 
     def resolve_rect_collision_with_level(self, level, geom_thresh=0.1) -> bool:
         rect = self.get_rect()
@@ -290,10 +197,11 @@ class Entity:
 
 def make_dynamic_polygon_body(world, polygon, color=(125, 255, 125),
                               linear_damping=10.0, angular_damping=10.0, density=1.0, restitution=0.12,
-                              category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS, group_index=NORMAL_GROUP) -> Box2D.b2Body:
-    avg_x = sum(xy[0] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
-    avg_y = sum(xy[1] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
-    shifted_pts = [(x * BOX2D_SCALE_FACTOR - avg_x, y * BOX2D_SCALE_FACTOR - avg_y) for (x, y) in polygon]
+                              category_bits=const.WALL_CATEGORY, mask_bits=const.ALL_OBJECTS,
+                              group_index=const.NORMAL_GROUP) -> Box2D.b2Body:
+    avg_x = sum(xy[0] * const.BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
+    avg_y = sum(xy[1] * const.BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
+    shifted_pts = [(x * const.BOX2D_SCALE_FACTOR - avg_x, y * const.BOX2D_SCALE_FACTOR - avg_y) for (x, y) in polygon]
 
     return world.CreateDynamicBody(
         position=(avg_x, avg_y),
@@ -311,10 +219,11 @@ def make_dynamic_polygon_body(world, polygon, color=(125, 255, 125),
     )
 
 def make_static_polygon_body(world, polygon, color=(125, 255, 125),
-                             category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS, group_index=NORMAL_GROUP) -> Box2D.b2Body:
-    avg_x = sum(xy[0] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
-    avg_y = sum(xy[1] * BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
-    shifted_pts = [(x * BOX2D_SCALE_FACTOR - avg_x, y * BOX2D_SCALE_FACTOR - avg_y) for (x, y) in polygon]
+                             category_bits=const.WALL_CATEGORY, mask_bits=const.ALL_OBJECTS,
+                             group_index=const.NORMAL_GROUP) -> Box2D.b2Body:
+    avg_x = sum(xy[0] * const.BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
+    avg_y = sum(xy[1] * const.BOX2D_SCALE_FACTOR for xy in polygon) / len(polygon)
+    shifted_pts = [(x * const.BOX2D_SCALE_FACTOR - avg_x, y * const.BOX2D_SCALE_FACTOR - avg_y) for (x, y) in polygon]
 
     return world.CreateStaticBody(
         position=(avg_x, avg_y),
@@ -329,9 +238,10 @@ def make_static_polygon_body(world, polygon, color=(125, 255, 125),
 
 def make_dynamic_circle_body(world, xy, radius, color=(125, 125, 125),
                              linear_damping=10.0, angular_damping=10.0, density=1.0, restitution=0.12,
-                             category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS, group_index=NORMAL_GROUP):
+                             category_bits=const.WALL_CATEGORY, mask_bits=const.ALL_OBJECTS,
+                             group_index=const.NORMAL_GROUP):
     return world.CreateDynamicBody(
-        position=(xy[0] * BOX2D_SCALE_FACTOR, xy[1] * BOX2D_SCALE_FACTOR),
+        position=(xy[0] * const.BOX2D_SCALE_FACTOR, xy[1] * const.BOX2D_SCALE_FACTOR),
         userData={
             'color': color
         },
@@ -339,7 +249,7 @@ def make_dynamic_circle_body(world, xy, radius, color=(125, 125, 125),
         angularDamping=angular_damping,
         fixtures=[
             Box2D.b2FixtureDef(
-                shape=Box2D.b2CircleShape(pos=(0, 0), radius=radius * BOX2D_SCALE_FACTOR),
+                shape=Box2D.b2CircleShape(pos=(0, 0), radius=radius * const.BOX2D_SCALE_FACTOR),
                 density=density,
                 restitution=restitution,
                 categoryBits=category_bits, maskBits=mask_bits, groupIndex=group_index
@@ -351,7 +261,7 @@ def make_dynamic_circle_body(world, xy, radius, color=(125, 125, 125),
 def all_fixtures_in_rect(world: Box2D.b2World, rect, cond=None, continue_after=lambda fix: True) \
         -> typing.Generator[Box2D.b2Fixture, None, None]:
     """Finds all fixtures in the world whose bounding boxes overlap a rectangle."""
-    rect = [x * BOX2D_SCALE_FACTOR for x in rect]
+    rect = [x * const.BOX2D_SCALE_FACTOR for x in rect]
     res_list = []
 
     class MyQueryCallback(Box2D.b2QueryCallback):
@@ -375,7 +285,7 @@ def all_fixtures_in_rect(world: Box2D.b2World, rect, cond=None, continue_after=l
 def all_fixtures_at_point(world: Box2D.b2World, pt, exact=True, cond=None, continue_after=lambda fix: True) \
         -> typing.Generator[Box2D.b2Fixture, None, None]:
     """Finds all fixtures in the world that contain a point."""
-    pt = (pt[0] * BOX2D_SCALE_FACTOR, pt[1] * BOX2D_SCALE_FACTOR)
+    pt = (pt[0] * const.BOX2D_SCALE_FACTOR, pt[1] * const.BOX2D_SCALE_FACTOR)
     xform = Box2D.b2Transform()
     xform.SetIdentity()
     for fix in all_fixtures_in_rect(world, (pt[0] - 0.001, pt[1] - 0.001, 0.002, 0.002),
@@ -386,7 +296,7 @@ def all_fixtures_at_point(world: Box2D.b2World, pt, exact=True, cond=None, conti
 
 class ParticleEntity(Entity):
 
-    def __init__(self, xy, radius=0.25, velocity=PARTICLE_VELOCITY, energy=PARTICLE_ENERGY):
+    def __init__(self, xy, radius=0.25, velocity=const.PARTICLE_VELOCITY, energy=const.PARTICLE_ENERGY):
         super().__init__(xy=xy, dims=(0, 0))
         self.xy = xy
         self.radius = radius
@@ -394,31 +304,32 @@ class ParticleEntity(Entity):
         self.energy = energy
 
         self.t = 0
-        self.duration = PARTICLE_DURATION
+        self.duration = const.PARTICLE_DURATION
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         body = make_dynamic_circle_body(
             world, self.xy, self.radius, (255, 0, 0),
             linear_damping=0, angular_damping=0, density=0.001, restitution=1,
-            category_bits=PARTICLE_CATEGORY, mask_bits=WALL_CATEGORY|PLAYER_CATEGORY|CRYSTAL_CATEGORY,
-            group_index=PARTICLE_GROUP
+            category_bits=const.PARTICLE_CATEGORY,
+            mask_bits=const.WALL_CATEGORY|const.PLAYER_CATEGORY|const.CRYSTAL_CATEGORY,
+            group_index=const.PARTICLE_GROUP
         )
         angle = random.random() * math.pi * 2
-        body.linearVelocity = Box2D.b2Vec2(math.cos(angle) * self.velocity * BOX2D_SCALE_FACTOR,
-                                           math.sin(angle) * self.velocity * BOX2D_SCALE_FACTOR)
+        body.linearVelocity = Box2D.b2Vec2(math.cos(angle) * self.velocity * const.BOX2D_SCALE_FACTOR,
+                                           math.sin(angle) * self.velocity * const.BOX2D_SCALE_FACTOR)
         return body
 
     def update(self, dt, level, **kwargs):
         self.t += dt
-        if self.duration < self.t or self.energy < PARTICLE_ENERGY / 100:
+        if self.duration < self.t or self.energy < const.PARTICLE_ENERGY / 100:
             level.remove_entity(self)
 
     def get_color(self):
-        return tint(RADIATION_COLOR, (0, 0, 0), 0.666 * (1 - (self.energy / PARTICLE_ENERGY)))
+        return tint(const.RADIATION_COLOR, (0, 0, 0), 0.666 * (1 - (self.energy / const.PARTICLE_ENERGY)))
 
     def render(self, surf):
         cx, cy = self.get_center_xy_on_screen()
-        surf.set_at((int(cx), int(cy) - WALL_HEIGHT // 2), self.get_color())
+        surf.set_at((int(cx), int(cy) - const.WALL_HEIGHT // 2), self.get_color())
 
 
 class ParticleEmitter(Entity):
@@ -448,8 +359,8 @@ class ParticleEmitter(Entity):
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
         return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0),
-                                        category_bits=EMITTER_CATEGORY, mask_bits=SOLID_OBJECTS,
-                                        group_index=PARTICLE_GROUP)
+                                        category_bits=const.EMITTER_CATEGORY, mask_bits=const.SOLID_OBJECTS,
+                                        group_index=const.PARTICLE_GROUP)
 
     def spawn_particle(self, level: 'Level', n=1):
         c_xy = self.get_center()
@@ -464,10 +375,10 @@ class ParticleAbsorber(Entity):
         self.energy_accum = 0
         self.energy_limit = energy_limit
         self.energy_overfill_limit = 1.333
-        self.decay_rate = AMBIENT_ENERGY_DECAY_RATE
+        self.decay_rate = const.AMBIENT_ENERGY_DECAY_RATE
 
     def absorb_particle(self, p_ent: ParticleEntity):
-        to_absorb = p_ent.energy * ENERGY_TRANSFER_ON_COLLISION
+        to_absorb = p_ent.energy * const.ENERGY_TRANSFER_ON_COLLISION
         p_ent.energy -= to_absorb
         self.energy_accum += to_absorb
 
@@ -487,14 +398,14 @@ class ParticleAbsorber(Entity):
                 if isinstance(other_ent, ParticleEntity):
                     self.absorb_particle(other_ent)
 
-        self.energy_accum *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
+        self.energy_accum *= (1 - const.AMBIENT_ENERGY_DECAY_RATE * dt)
         if self.energy_accum >= self.energy_overfill_limit * self.energy_limit:
             self.energy_accum = max(0.0, self.energy_overfill_limit * self.energy_limit)
 
 
 class CrystalEntity(ParticleAbsorber):
 
-    def __init__(self, xy, crystal_type=-1, energy_limit=CRYSTAL_LIMIT, **kwargs):
+    def __init__(self, xy, crystal_type=-1, energy_limit=const.CRYSTAL_LIMIT, **kwargs):
         super().__init__(xy=xy, dims=(3, 3), energy_limit=energy_limit, **kwargs)
         self.crystal_type = int(3 * random.random()) if crystal_type < 0 else crystal_type
 
@@ -503,7 +414,7 @@ class CrystalEntity(ParticleAbsorber):
         w, h = self.dims
         pts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
         return make_static_polygon_body(world, pts, color=(0, 255, 0),
-                                        category_bits=WALL_CATEGORY, mask_bits=ALL_OBJECTS)
+                                        category_bits=const.WALL_CATEGORY, mask_bits=const.ALL_OBJECTS)
 
     def update(self, dt, level, **kwargs):
         was_full = self.get_energy_pcnt() >= 1
@@ -544,7 +455,7 @@ class WallEntity(Entity):
     def get_pts(self):
         if self.body is not None:
             b2_pts = [self.body.GetWorldPoint(pt) for pt in self.body.fixtures[0].shape.vertices]
-            return [(x / BOX2D_SCALE_FACTOR, y / BOX2D_SCALE_FACTOR) for (x, y) in b2_pts]
+            return [(x / const.BOX2D_SCALE_FACTOR, y / const.BOX2D_SCALE_FACTOR) for (x, y) in b2_pts]
         else:
             return self._poly_list
 
@@ -556,7 +467,7 @@ class WallEntity(Entity):
 
     def render(self, surf):
         base_pts = [self.convert_to_screen_pt(xy) for xy in self.get_pts()]
-        top_pts = [(x, y - WALL_HEIGHT) for (x, y) in base_pts]
+        top_pts = [(x, y - const.WALL_HEIGHT) for (x, y) in base_pts]
 
         hull_pts = [pygame.Vector2(xy) for xy in convexhull.convexHull(base_pts + top_pts)]
 
@@ -592,14 +503,14 @@ class PolygonEntity(WallEntity, ParticleAbsorber):
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         res = make_dynamic_polygon_body(world, self._poly_list, (255, 255, 255))
-        self.energy_limit = float(res.mass * WALL_LIMIT_PER_KG)
+        self.energy_limit = float(res.mass * const.WALL_LIMIT_PER_KG)
         return res
 
 
 class Player(ParticleAbsorber):
 
     def __init__(self, xy, dims=(2, 2)):
-        super().__init__(xy=xy, dims=dims, energy_limit=PLAYER_LIMIT)
+        super().__init__(xy=xy, dims=dims, energy_limit=const.PLAYER_LIMIT)
         self.last_dir = pygame.Vector2(0, 1)
         self.grab_reach = 0.666
         self.grab_joint = None
@@ -608,7 +519,7 @@ class Player(ParticleAbsorber):
         super().update(dt, level)
         move_dir = pygame.Vector2()
 
-        keys = KEYS_HELD_THIS_FRAME
+        keys = const.KEYS_HELD_THIS_FRAME
         if pygame.K_a in keys or pygame.K_LEFT in keys:
             move_dir.x -= 1
         if pygame.K_d in keys or pygame.K_RIGHT in keys:
@@ -618,14 +529,14 @@ class Player(ParticleAbsorber):
         if pygame.K_s in keys or pygame.K_DOWN in keys:
             move_dir.y += 1
         if move_dir.magnitude() > 0:
-            move_dir.scale_to_length(MOVE_SPEED)
-            self.body.linearVelocity = (move_dir * BOX2D_SCALE_FACTOR).xy
+            move_dir.scale_to_length(const.MOVE_SPEED)
+            self.body.linearVelocity = (move_dir * const.BOX2D_SCALE_FACTOR).xy
             self.last_dir = move_dir
         else:
             self.resolve_rect_collision_with_level(level)
 
-        if pygame.K_SPACE in KEYS_PRESSED_THIS_FRAME or \
-                (pygame.K_SPACE in KEYS_HELD_THIS_FRAME and self.grab_joint is None):
+        if pygame.K_SPACE in const.KEYS_PRESSED_THIS_FRAME or \
+                (pygame.K_SPACE in const.KEYS_HELD_THIS_FRAME and self.grab_joint is None):
             grab_pt = pygame.Vector2(self.get_center()) + pygame.Vector2(self.last_dir).normalize() * (self.grab_reach + self.dims[0] / 2)
             fix = [f for f in all_fixtures_at_point(level.world, grab_pt)
                    if not isinstance(f.body.userData['entity'], ParticleEntity)]
@@ -633,8 +544,8 @@ class Player(ParticleAbsorber):
                 level.world.DestroyJoint(self.grab_joint)
                 self.grab_joint = None
             if len(fix) > 0:
-                c_xy = (i * BOX2D_SCALE_FACTOR for i in self.get_center())
-                o_xy = (i * BOX2D_SCALE_FACTOR for i in grab_pt)
+                c_xy = (i * const.BOX2D_SCALE_FACTOR for i in self.get_center())
+                o_xy = (i * const.BOX2D_SCALE_FACTOR for i in grab_pt)
                 self.grab_joint = level.world.CreateDistanceJoint(
                     bodyA=self.body,
                     bodyB=fix[0].body,  # TODO calc best fixt to grab
@@ -643,7 +554,7 @@ class Player(ParticleAbsorber):
                     collideConnected=True)
                 level.add_entity(AnimationEntity(grab_pt, color=(225, 225, 225), radius=8, duration=0.25))
                 sounds.play_sound('click')
-        elif pygame.K_SPACE in KEYS_RELEASED_THIS_FRAME:
+        elif pygame.K_SPACE in const.KEYS_RELEASED_THIS_FRAME:
             if self.grab_joint is not None:
                 level.world.DestroyJoint(self.grab_joint)
                 self.grab_joint = None
@@ -651,12 +562,14 @@ class Player(ParticleAbsorber):
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
         return make_dynamic_circle_body(world, self.get_center(), radius, (255, 0, 0),
-                                        category_bits=PLAYER_CATEGORY, mask_bits=SOLID_OBJECTS)
+                                        category_bits=const.PLAYER_CATEGORY, mask_bits=const.SOLID_OBJECTS)
 
     def get_display_angle(self) -> float:
         if self.grab_joint is not None:
-            anchor_a = (self.grab_joint.anchorA.x / BOX2D_SCALE_FACTOR, self.grab_joint.anchorA.y / BOX2D_SCALE_FACTOR)
-            anchor_b = (self.grab_joint.anchorB.x / BOX2D_SCALE_FACTOR, self.grab_joint.anchorB.y / BOX2D_SCALE_FACTOR)
+            anchor_a = (self.grab_joint.anchorA.x / const.BOX2D_SCALE_FACTOR,
+                        self.grab_joint.anchorA.y / const.BOX2D_SCALE_FACTOR)
+            anchor_b = (self.grab_joint.anchorB.x / const.BOX2D_SCALE_FACTOR,
+                        self.grab_joint.anchorB.y / const.BOX2D_SCALE_FACTOR)
             vec = pygame.Vector2(anchor_b)
             vec -= anchor_a
             if vec.magnitude() > 0:
@@ -703,7 +616,7 @@ class AnimationEntity(Entity):
 
 class Level:
 
-    def __init__(self, size, spawn_rate=SPAWN_RATE):
+    def __init__(self, size, spawn_rate=const.SPAWN_RATE):
         self.size = size
         self.particles: ParticleArray = ParticleArray()
         self.spawn_rate = spawn_rate
@@ -724,7 +637,7 @@ class Level:
         self.world.Step(dt, 6, 2)
 
         self.update_entities(dt)
-        self.energy *= (1 - AMBIENT_ENERGY_DECAY_RATE * dt)
+        self.energy *= (1 - const.AMBIENT_ENERGY_DECAY_RATE * dt)
 
         for ent in self._ents_to_add:
             self.add_entity(ent, immediately=True)
@@ -799,13 +712,13 @@ class Level:
             if self.is_valid((x, y)):
                 geom = self.get_geom_at((x, y))
                 if geom > 0 and random.random() < dt * 1000:
-                    energy_lost = ENERGY_TRANSFER_ON_COLLISION * self.particles.energy[idx]
+                    energy_lost = const.ENERGY_TRANSFER_ON_COLLISION * self.particles.energy[idx]
                     self.energy[x][y] += energy_lost
                     self.particles.energy[idx] -= energy_lost
 
                     new_angle = random.random() * 2 * math.pi
-                    self.particles.vx[idx] = PARTICLE_VELOCITY * math.cos(new_angle)
-                    self.particles.vy[idx] = PARTICLE_VELOCITY * math.sin(new_angle)
+                    self.particles.vx[idx] = const.PARTICLE_VELOCITY * math.cos(new_angle)
+                    self.particles.vy[idx] = const.PARTICLE_VELOCITY * math.sin(new_angle)
                 if (x, y) not in self.spatial_hash:
                     self.spatial_hash[(x, y)] = []
                 self.spatial_hash[(x, y)].append(idx)
@@ -847,7 +760,7 @@ class Level:
 
     def render_energy(self, surf: pygame.Surface):
         rbuf = pygame.surfarray.pixels_red(surf)
-        max_energy = PARTICLE_ENERGY * 1.5
+        max_energy = const.PARTICLE_ENERGY * 1.5
         if max_energy > 0:
             rbuf[:] = (numpy.clip(self.energy / max_energy, 0, 1) * 255).astype(numpy.int16)
 
@@ -862,7 +775,7 @@ class Level:
             ent.render(surf)
 
 def load_level_from_file(filename) -> Level:
-    img = pygame.image.load(f'{LEVEL_DIR}/{filename}').convert()
+    img = pygame.image.load(f'{const.LEVEL_DIR}/{filename}').convert()
     size = img.get_size()
     res = Level(size)
 
@@ -929,15 +842,15 @@ def world_xy_to_screen_xy(world_xy, screen_rect, camera_rect, rounded=False):
 def draw_fixture(surf, fixture: Box2D.b2Fixture, camera_rect, color=(255, 255, 255), width=1):
     if isinstance(fixture.shape, Box2D.b2CircleShape):
         pt_b2 = fixture.body.GetWorldPoint(fixture.shape.pos)
-        pt = (pt_b2[0] / BOX2D_SCALE_FACTOR, pt_b2[1] / BOX2D_SCALE_FACTOR)
+        pt = (pt_b2[0] / const.BOX2D_SCALE_FACTOR, pt_b2[1] / const.BOX2D_SCALE_FACTOR)
         surf_pt = world_xy_to_screen_xy(pt, surf.get_rect(), camera_rect)
-        r = round(fixture.shape.radius / BOX2D_SCALE_FACTOR * surf.get_width() / camera_rect[2])
+        r = round(fixture.shape.radius / const.BOX2D_SCALE_FACTOR * surf.get_width() / camera_rect[2])
         pygame.draw.circle(surf, color, surf_pt, r, width=width)
         # if DRAW_PTS:
         #     pygame.draw.circle(surf, DRAW_PTS[0], surf_pt, DRAW_PTS[1])
     else:
         xform_pts_b2 = [fixture.body.GetWorldPoint(pt) for pt in fixture.shape.vertices]
-        xform_pts = [(x / BOX2D_SCALE_FACTOR, y / BOX2D_SCALE_FACTOR) for (x, y) in xform_pts_b2]
+        xform_pts = [(x / const.BOX2D_SCALE_FACTOR, y / const.BOX2D_SCALE_FACTOR) for (x, y) in xform_pts_b2]
         surf_pts = [world_xy_to_screen_xy(pt, surf.get_rect(), camera_rect) for pt in xform_pts]
         pygame.draw.polygon(surf, color, surf_pts, width=width)
         # if DRAW_PTS:
@@ -954,84 +867,95 @@ def draw_body(surf, body, camera_rect, color=None, width=1):
         draw_fixture(surf, fix, camera_rect, color=color, width=width)
 
 def render_box2d_world(surf, world: Box2D.b2World, camera_rect):
-    # bounds = [0, 0, DIMS[0], DIMS[1]]
-    # world_bounds = [0, 0, DIMS[0] * BOX2D_SCALE_FACTOR, DIMS[1] * BOX2D_SCALE_FACTOR]
-    # pygame.draw.rect()
-
     for body in world.bodies:
         draw_body(surf, body, camera_rect)
 
 
 if __name__ == "__main__":
-    screen = utils.make_fancy_scaled_display(SCREEN_DIMS, scale_factor=2, extra_flags=pygame.RESIZABLE)
-    pygame.display.set_caption(GAME_TITLE)
+    pygame.init()
+    pygame.font.init()
+    
+    screen = utils.make_fancy_scaled_display(const.SCREEN_DIMS, scale_factor=2, extra_flags=pygame.RESIZABLE)
+    pygame.display.set_caption(const.GAME_TITLE)
 
-    sounds.initialize(SOUND_DIR)
-    sounds.play_song(MAIN_SONG)
+    sounds.initialize(const.SOUND_DIR)
 
-    rad_surf = pygame.Surface(DIMS)
+    rad_surf = pygame.Surface(const.DIMS)
 
     clock = pygame.time.Clock()
     dt = 0
 
     level = load_level_from_file("test.png")
-    Spritesheet.load("assets/sprites.png")
+    Spritesheet.load(utils.res_path("assets/sprites.png"))
+    UiSheet.load(utils.res_path("assets"))
+
+    scene_manager = scenes.SceneManager(scenes.MainMenuScene())
 
     frm_cnt = 0
 
     running = True
     while running:
-        KEYS_PRESSED_THIS_FRAME.clear()
-        KEYS_RELEASED_THIS_FRAME.clear()
+        const.KEYS_PRESSED_THIS_FRAME.clear()
+        const.KEYS_RELEASED_THIS_FRAME.clear()
         for e in pygame.event.get():
             if e.type == pygame.QUIT or \
                     (e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE):
                 running = False
             elif e.type == pygame.KEYDOWN:
-                KEYS_PRESSED_THIS_FRAME.add(e.key)
-                KEYS_HELD_THIS_FRAME.add(e.key)
+                const.KEYS_PRESSED_THIS_FRAME.add(e.key)
+                const.KEYS_HELD_THIS_FRAME.add(e.key)
                 if e.key == pygame.K_r:
                     level = load_level_from_file("test.png")
             elif e.type == pygame.KEYUP:
-                KEYS_RELEASED_THIS_FRAME.add(e.key)
-                if e.key in KEYS_HELD_THIS_FRAME:
-                    KEYS_HELD_THIS_FRAME.remove(e.key)
+                const.KEYS_RELEASED_THIS_FRAME.add(e.key)
+                if e.key in const.KEYS_HELD_THIS_FRAME:
+                    const.KEYS_HELD_THIS_FRAME.remove(e.key)
 
-        level.update(dt)
+        scene_manager.update(dt)
+        scene_manager.render(screen)
 
-        screen.fill("black")
-        rad_surf.fill("black")
-
-        if pygame.K_b in KEYS_HELD_THIS_FRAME:
-            level_screen_rect = (0, 0, DIMS[0] * DISPLAY_SCALE_FACTOR, DIMS[1] * DISPLAY_SCALE_FACTOR)
-            render_box2d_world(screen.subsurface(level_screen_rect), level.world,
-                               [0, 0, DIMS[0] * BOX2D_SCALE_FACTOR,
-                                DIMS[1] * BOX2D_SCALE_FACTOR])
-        else:
-            if pygame.K_p in KEYS_HELD_THIS_FRAME:
-                level.render_geometry(rad_surf, color=(35, 40, 50))
-                level.render_particles(rad_surf)
-            else:
-                level.render_energy(rad_surf)
-
-            screen.blit(pygame.transform.scale_by(rad_surf, (DISPLAY_SCALE_FACTOR,) * 2), (0, 0))
-            level.render_entities(screen)
-
-            dose_pcnt = 1 if level.player is None else level.player.get_energy_pcnt()
-            dose_bar_size = (2 * SCREEN_DIMS[0] // 3, Spritesheet.heart_icon.get_height())
-            render_dose_bar(screen, (SCREEN_DIMS[0] // 2 - dose_bar_size[0] // 2,
-                                     SCREEN_DIMS[1] - EXTRA_SCREEN_HEIGHT // 2 - dose_bar_size[1] // 2,
-                                     dose_bar_size[0], dose_bar_size[1]), dose_pcnt)
+        # level.update(dt)
+        #
+        # screen.fill("black")
+        # rad_surf.fill("black")
+        #
+        # if pygame.K_b in const.KEYS_HELD_THIS_FRAME:
+        #     level_screen_rect = (0, 0, const.DIMS[0] * const.DISPLAY_SCALE_FACTOR,
+        #                          const.DIMS[1] * const.DISPLAY_SCALE_FACTOR)
+        #     render_box2d_world(screen.subsurface(level_screen_rect), level.world,
+        #                        [0, 0, const.DIMS[0] * const.BOX2D_SCALE_FACTOR,
+        #                         const.DIMS[1] * const.BOX2D_SCALE_FACTOR])
+        # else:
+        #     if pygame.K_p in const.KEYS_HELD_THIS_FRAME:
+        #         level.render_geometry(rad_surf, color=(35, 40, 50))
+        #         level.render_particles(rad_surf)
+        #     else:
+        #         level.render_energy(rad_surf)
+        #
+        #     screen.blit(pygame.transform.scale_by(rad_surf, (const.DISPLAY_SCALE_FACTOR,) * 2), (0, 0))
+        #     level.render_entities(screen)
+        #
+        #     dose_pcnt = 1 if level.player is None else level.player.get_energy_pcnt()
+        #     dose_bar_size = (2 * const.SCREEN_DIMS[0] // 3, Spritesheet.heart_icon.get_height())
+        #     render_dose_bar(screen, (const.SCREEN_DIMS[0] // 2 - dose_bar_size[0] // 2,
+        #                              const.SCREEN_DIMS[1] - const.EXTRA_SCREEN_HEIGHT // 2 - dose_bar_size[1] // 2,
+        #                              dose_bar_size[0], dose_bar_size[1]), dose_pcnt)
 
         pygame.display.flip()
 
-        if frm_cnt % 15 == 14:
-            pygame.display.set_caption(f"{GAME_TITLE} (FPS={clock.get_fps():.2f}, "
-                                       f"N={len(level.particles)}, "
-                                       f"pE={0 if level.player is None else level.player.energy_accum:.2f})")
+        if frm_cnt % 15 == 14 and const.IS_DEV:
+            caption_info = {'FPS': f"{clock.get_fps():.2f}"}
+            for key, val in scene_manager.active_scene.get_caption_info().items():
+                caption_info[key] = str(val)
+            if len(caption_info) > 0:
+                msg = ", ".join(f"{key}={val}" for (key, val) in caption_info.items())
+                caption = f"{const.GAME_TITLE} ({msg})"
+            else:
+                caption = f"{const.GAME_TITLE}"
+            pygame.display.set_caption(caption)
 
-        dt = clock.tick() / 1000
-        dt = min(dt, 1 / MIN_FPS)
+        dt = clock.tick(120) / 1000
+        dt = min(dt, 1 / const.MIN_FPS)
 
         frm_cnt += 1
 

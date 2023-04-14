@@ -10,13 +10,17 @@ import Box2D
 import src.utils as utils
 import src.convexhull2 as convexhull
 import src.readme_writer as readme_writer
+import src.sounds as sounds
 
 IS_DEV = os.path.exists(".gitignore")
 if IS_DEV:
     readme_writer.write_basic_readme()
 
 GAME_TITLE = "Meltdown"
+
 LEVEL_DIR = "levels"
+SOUND_DIR = "assets/sounds"
+MAIN_SONG = "assets/music/001-electronica-gaming-edits.ogg"
 
 DIMS = (64, 48)
 DISPLAY_SCALE_FACTOR = 4
@@ -63,6 +67,7 @@ CRYSTAL_CATEGORY = 0x0016
 
 SOLID_OBJECTS = EMITTER_CATEGORY | PLAYER_CATEGORY | WALL_CATEGORY | CRYSTAL_CATEGORY
 ALL_OBJECTS = SOLID_OBJECTS | PARTICLE_CATEGORY
+
 
 class ParticleArray:
 
@@ -590,6 +595,7 @@ class PolygonEntity(WallEntity, ParticleAbsorber):
         self.energy_limit = float(res.mass * WALL_LIMIT_PER_KG)
         return res
 
+
 class Player(ParticleAbsorber):
 
     def __init__(self, xy, dims=(2, 2)):
@@ -636,6 +642,7 @@ class Player(ParticleAbsorber):
                     anchorB=Box2D.b2Vec2(*o_xy),
                     collideConnected=True)
                 level.add_entity(AnimationEntity(grab_pt, color=(225, 225, 225), radius=8, duration=0.25))
+                sounds.play_sound('click')
         elif pygame.K_SPACE in KEYS_RELEASED_THIS_FRAME:
             if self.grab_joint is not None:
                 level.world.DestroyJoint(self.grab_joint)
@@ -692,6 +699,7 @@ class AnimationEntity(Entity):
         cx, cy = self.get_center_xy_on_screen()
         t = self.get_prog()
         pygame.draw.circle(surf, self.color, (cx, cy), self.radius * (1 - math.cos(t * math.pi * 2)), width=1)
+
 
 class Level:
 
@@ -957,6 +965,9 @@ def render_box2d_world(surf, world: Box2D.b2World, camera_rect):
 if __name__ == "__main__":
     screen = utils.make_fancy_scaled_display(SCREEN_DIMS, scale_factor=2, extra_flags=pygame.RESIZABLE)
     pygame.display.set_caption(GAME_TITLE)
+
+    sounds.initialize(SOUND_DIR)
+    sounds.play_song(MAIN_SONG)
 
     rad_surf = pygame.Surface(DIMS)
 

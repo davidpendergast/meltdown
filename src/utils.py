@@ -1,8 +1,10 @@
 import pygame
 import pygame._sdl2 as sdl2
 
+import sys, os
 
-# from https://github.com/davidpendergast/pygame-utils/blob/main/rainbowize.py
+
+# from (my own) https://github.com/davidpendergast/pygame-utils/blob/main/rainbowize.py
 def make_fancy_scaled_display(
         size,
         scale_factor=0.,
@@ -64,3 +66,14 @@ def make_fancy_scaled_display(
 
     return res
 
+
+# yoinkers from https://stackoverflow.com/a/13790741
+def res_path(filepath):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, filepath)

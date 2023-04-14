@@ -20,6 +20,7 @@ SCREEN_DIMS = (DISPLAY_SCALE_FACTOR * DIMS[0],
 
 MIN_FPS = 45
 
+MENU_ANIM_SPEED = 1
 MENU_MOVE = 'menu_move'
 MENU_SELECT = 'menu_select'
 

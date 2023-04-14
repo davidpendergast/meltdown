@@ -875,7 +875,11 @@ if __name__ == "__main__":
     pygame.init()
     pygame.font.init()
     
-    screen = utils.make_fancy_scaled_display(const.SCREEN_DIMS, scale_factor=2, extra_flags=pygame.RESIZABLE)
+    screen = utils.make_fancy_scaled_display(
+        const.SCREEN_DIMS,
+        scale_factor=2,
+        outer_fill_color=(121, 0, 0),
+        extra_flags=pygame.RESIZABLE)
     pygame.display.set_caption(const.GAME_TITLE)
 
     sounds.initialize(const.SOUND_DIR)

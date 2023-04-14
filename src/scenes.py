@@ -6,7 +6,6 @@ import src.sounds as sounds
 import src.utils as utils
 import math
 
-
 class SceneManager:
 
     def __init__(self, start: 'Scene'):
@@ -21,6 +20,7 @@ class SceneManager:
             if self.active_scene is not None:
                 self.active_scene.on_exit()
                 self.active_scene.manager = None
+            self._next_scene.manager = self
             self.active_scene = self._next_scene
             self.active_scene.on_start()
             self._next_scene = None
@@ -64,8 +64,14 @@ class TitleScene(Scene):
     def __init__(self, title_img=None, title_y_pos=0.333, bg_img=None,
                  overlay_top_imgs=(), overlay_bottom_imgs=()):
         super().__init__()
+
+        title_img_size = 48
+        if isinstance(title_img, tuple):
+            title_img, title_img_size = title_img
         self.title_img = title_img
+        self.title_img_size = title_img_size
         self.title_y_pos = title_y_pos
+
         self.overlay_top_imgs = overlay_top_imgs
         self.overlay_bottom_imgs = overlay_bottom_imgs
         self.bg_img = bg_img
@@ -78,21 +84,21 @@ class TitleScene(Scene):
 
     def get_overlay_y_offset(self, for_surf, side='top'):
         start, end = (16, 0)
-        duration = 1.333
+        duration = 1.333 / const.MENU_ANIM_SPEED
         return utils.lerp(start, end, self.elapsed_time / duration)
 
     def get_title_tint(self):
         color = (64, 0, 0)
         start, end = (1, 0)
-        duration = 3.333
+        duration = 3.333 / const.MENU_ANIM_SPEED
         strength = utils.lerp(start, end, self.elapsed_time / duration)
         return color, strength
 
     def get_bg_tint(self):
         color = (0, 0, 0)
         start, end = (1, 0)
-        duration = 5
-        wobble = 0.2 * (1 + math.cos(math.pi * 2 * self.elapsed_time / 1.666)) / 2
+        duration = 5 / const.MENU_ANIM_SPEED
+        wobble = 0.2 * (1 + math.cos(math.pi * 2 * self.elapsed_time / 1.666 * const.MENU_ANIM_SPEED)) / 2
         strength = utils.lerp(start, end, self.elapsed_time / duration) + wobble
         return color, strength
 
@@ -101,8 +107,9 @@ class TitleScene(Scene):
             bg_tinted = sprites.tint(self.bg_img, *self.get_bg_tint())
             surf.blit(bg_tinted, (int(surf.get_width() / 2 - bg_tinted.get_width() / 2),
                                   int(surf.get_height() / 2 - bg_tinted.get_height() / 2)))
+
         if self.title_img is not None:
-            title_resized = sprites.resize(self.title_img, (None, 54), method='smooth')
+            title_resized = sprites.resize(self.title_img, (None, self.title_img_size), method='smooth')
             title_tinted = sprites.tint(title_resized, *self.get_title_tint())
             surf.blit(title_tinted, (int(surf.get_width() / 2 - title_tinted.get_width() / 2),
                                      int(surf.get_height() * self.title_y_pos - title_tinted.get_height() / 2)))
@@ -229,13 +236,30 @@ class OptionMenuScene(TitleScene):
 class MainMenuScene(OptionMenuScene):
 
     def __init__(self):
-        super().__init__(title_img=sprites.UiSheet.TITLES['meltdown'],
+        super().__init__(title_img=(sprites.UiSheet.TITLES['meltdown'], 54),
                          bg_img=sprites.UiSheet.MAIN_MENU_BG,
                          overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['small_2x'],
                          overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
 
         self.options = ['start', 'levels', 'exit']
 
+    def activate_option(self, opt_name):
+        super().activate_option(opt_name)
+        if opt_name == 'start':
+            self.manager.jump_to_scene(InstructionsMenuScene())
+
     def on_start(self):
         sounds.play_song(utils.res_path(const.MAIN_SONG))
+
+
+class InstructionsMenuScene(OptionMenuScene):
+
+    def __init__(self):
+        super().__init__(
+            options=["next", "back"],
+            title_img=(sprites.UiSheet.TITLES['instructions'], 32),
+            bg_img=sprites.UiSheet.EMPTY_BG,
+            overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['thin_2x'],
+            overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x']
+        )
 

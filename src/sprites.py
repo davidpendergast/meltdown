@@ -104,6 +104,7 @@ class UiSheet:
     OVERLAY_BOTTOMS = {}
 
     MAIN_MENU_BG = None
+    EMPTY_BG = None
     TITLES = {}
 
     @staticmethod
@@ -126,6 +127,7 @@ class UiSheet:
             UiSheet.OVERLAY_BOTTOMS[key] = [pygame.transform.flip(img, False, True) for img in UiSheet.OVERLAY_TOPS[key]]
 
         UiSheet.MAIN_MENU_BG = pygame.image.load(os.path.join(asset_dir, "main_menu_bg.png")).convert_alpha()
+        UiSheet.EMPTY_BG = pygame.image.load(os.path.join(asset_dir, "empty_bg.png")).convert_alpha()
 
         for filename in os.listdir(os.path.join(asset_dir, "titles")):
             if filename.endswith(".png"):

@@ -71,6 +71,7 @@ class TitleScene(Scene):
         self.title_img = title_img
         self.title_img_size = title_img_size
         self.title_y_pos = title_y_pos
+        self._title_rect = (0, 0, 0, 0)
 
         self.overlay_top_imgs = overlay_top_imgs
         self.overlay_bottom_imgs = overlay_bottom_imgs
@@ -111,8 +112,10 @@ class TitleScene(Scene):
         if self.title_img is not None:
             title_resized = sprites.resize(self.title_img, (None, self.title_img_size), method='smooth')
             title_tinted = sprites.tint(title_resized, *self.get_title_tint())
-            surf.blit(title_tinted, (int(surf.get_width() / 2 - title_tinted.get_width() / 2),
-                                     int(surf.get_height() * self.title_y_pos - title_tinted.get_height() / 2)))
+            title_xy = (int(surf.get_width() / 2 - title_tinted.get_width() / 2),
+                        int(surf.get_height() * self.title_y_pos - title_tinted.get_height() / 2))
+            surf.blit(title_tinted, title_xy)
+            self._title_rect = (*title_xy, title_tinted.get_width(), title_tinted.get_height())
 
         y_offs = self.get_overlay_y_offset(surf, side='top')
         if len(self.overlay_top_imgs) == 1:
@@ -147,7 +150,7 @@ class OptionMenuScene(TitleScene):
 
     FONT_CACHE = {}  # name, size -> Font
 
-    def __init__(self, options=(), title_img=None, title_y_pos=0.333, bg_img=None,
+    def __init__(self, options=(), options_size=16, info_text=None, title_img=None, title_y_pos=0.333, bg_img=None,
                  overlay_top_imgs=(), overlay_bottom_imgs=()):
         super().__init__(title_img=title_img, title_y_pos=title_y_pos, bg_img=bg_img,
                          overlay_top_imgs=overlay_top_imgs, overlay_bottom_imgs=overlay_bottom_imgs)
@@ -155,13 +158,18 @@ class OptionMenuScene(TitleScene):
         self.sel_opt = 0
 
         self._cached_option_renderings = {}  # (text, color) -> Surface
+        self._options_size = options_size
+
+        self.info_text = info_text
+        self.info_text_size = options_size
+        self.cached_info_text_rendering = {}  # (text, color) -> Surface
 
         self.base_color = (247, 196, 196)
         self.sel_color = (214, 10, 10)
         self.disabled_color = (76, 72, 72)
         self.disabled_sel_color = (159, 154, 154)
 
-    def get_font(self, size=32):
+    def get_font(self, size=32) -> pygame.font.Font:
         key = ('n', size)
         if key not in OptionMenuScene.FONT_CACHE:
             OptionMenuScene.FONT_CACHE[key] = pygame.font.Font(utils.res_path(const.MAIN_FONT), size)
@@ -198,6 +206,8 @@ class OptionMenuScene(TitleScene):
                     sounds.play_sound('error')
 
     def get_color(self, opt_name):
+        if opt_name not in self.options:
+            return self.base_color
         is_sel = self.options.index(opt_name) == self.sel_opt
         is_enabled = self.opt_enabled(opt_name)
         if is_enabled:
@@ -210,21 +220,35 @@ class OptionMenuScene(TitleScene):
         color = self.get_color(opt_name)
         key = (opt_name, color)
         if key not in self._cached_option_renderings:
-            self._cached_option_renderings[key] = self.get_font().render(opt_name, False, color)
+            self._cached_option_renderings[key] = self.get_font(size=self._options_size).render(opt_name, False, color)
         return self._cached_option_renderings[key]
 
-    def get_options_render_offs(self, surf, size):
+    def get_options_render_offs(self, surf, size, min_y):
         x = int(surf.get_width() / 2 - size[0] / 2)
         y_max = int(surf.get_height() - size[1])
-        y = min(y_max, int(surf.get_height() * 0.666 - size[1] / 2))
+        y = min(y_max, min_y + int((surf.get_height() - min_y) * 0.333 - size[1] / 2))
         return x, y
 
     def render(self, surf):
         super().render(surf)
+        y = self._title_rect[1] + self._title_rect[3]
+
+        if self.info_text is not None:
+            key = (self.info_text, self.get_color(''))
+            if key not in self.cached_info_text_rendering:
+                font = self.get_font(self.info_text_size)
+                self.cached_info_text_rendering[key] = font.render(self.info_text, False, key[1], None,
+                                                                   int(surf.get_width() * 0.9))
+            y += 8
+            x = int(surf.get_width() / 2 - self.cached_info_text_rendering[key].get_width() / 2)
+            surf.blit(self.cached_info_text_rendering[key], (x, y))
+
+            y += self.cached_info_text_rendering[key].get_height()
+
         option_renders = [self.render_option(opt_name) for opt_name in self.options]
         h = sum((s.get_height() for s in option_renders), start=0)
         w = max((s.get_width() for s in option_renders), default=0)
-        rect = [*self.get_options_render_offs(surf, (w, h)), w, h]
+        rect = [*self.get_options_render_offs(surf, (w, h), min_y=y), w, h]
 
         y = 0
         for opt_img in option_renders:
@@ -254,12 +278,45 @@ class MainMenuScene(OptionMenuScene):
 
 class InstructionsMenuScene(OptionMenuScene):
 
-    def __init__(self):
+    INFO_TEXT = [
+        "The power plant is melting down! \n\n"
+        "Guide the radiation into the energy crystals to charge them. "
+        "Fully charge all crystals at the same time to win.",
+
+        "[WASD] or Arrows to Move\n"
+        "[Space] to grab objects\n"
+        "[R] to Restart\n"
+        "[Esc] to Pause",
+
+        "If you absorb too much radiation too quickly, you'll die. "
+        "Absorbed radiation in all things diminishes gradually over "
+        "time (including crystals)."
+    ]
+
+    def __init__(self, page=0):
         super().__init__(
-            options=["next", "back"],
+            options=["next" if not self.is_last_page(page) else 'start', "back"],
+            info_text=InstructionsMenuScene.INFO_TEXT[page],
             title_img=(sprites.UiSheet.TITLES['instructions'], 32),
+            title_y_pos=0.2,
             bg_img=sprites.UiSheet.EMPTY_BG,
             overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['thin_2x'],
             overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x']
         )
+        self.page = page
+
+    def is_last_page(self, page):
+        return page == len(InstructionsMenuScene.INFO_TEXT) - 1
+
+    def activate_option(self, opt_name):
+        super().activate_option(opt_name)
+        if opt_name == 'start':
+            self.manager.jump_to_scene(MainMenuScene())  # todo jump to LEVEL 1
+        elif opt_name == 'next':
+            self.manager.jump_to_scene(InstructionsMenuScene(self.page + 1))
+        elif opt_name == 'back':
+            if self.page == 0:
+                self.manager.jump_to_scene(MainMenuScene())
+            else:
+                self.manager.jump_to_scene(InstructionsMenuScene(self.page - 1))
 

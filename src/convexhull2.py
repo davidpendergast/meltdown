@@ -9,6 +9,7 @@
 #         self.x = x
 #         self.y = y
 
+import src.utils as utils
 
 def Left_index(points):
     '''
@@ -41,10 +42,6 @@ def orientation(p, q, r):
         return 1
     else:
         return 2
-
-
-def dist2(p1, p2):
-    return (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1])
 
 
 def convexHull(points):
@@ -85,7 +82,7 @@ def convexHull(points):
             # If i is more counterclockwise
             # than current q, then update q
             ori = orientation(points[p], points[i], points[q])
-            if ori == 2 or (ori == 0 and dist2(points[p], points[i]) > dist2(points[p], points[q])):
+            if ori == 2 or (ori == 0 and utils.dist2(points[p], points[i]) > utils.dist2(points[p], points[q])):
                 q = i
 
         '''

@@ -13,7 +13,7 @@ import src.sounds as sounds
 import src.scenes as scenes
 from src.sprites import Spritesheet, UiSheet
 
-LEVELS = ["test.png"]
+LEVELS = ["laser.png", "test.png"]
 
 
 class GameplayScene(scenes.OverlayScene):
@@ -305,11 +305,16 @@ def all_fixtures_at_point(world: Box2D.b2World, pt, exact=True, cond=None, conti
 
 class ParticleEntity(Entity):
 
-    def __init__(self, xy, radius=0.25, velocity=const.PARTICLE_VELOCITY, energy=const.PARTICLE_ENERGY):
+    def __init__(self, xy, radius=0.25, velocity=const.PARTICLE_VELOCITY, direction=None, energy=const.PARTICLE_ENERGY):
         super().__init__(xy=xy, dims=(0, 0))
         self.xy = xy
         self.radius = radius
         self.velocity = velocity
+        if direction is None:
+            angle = random.random() * math.pi * 2
+            self.initial_direction = math.cos(angle), math.sin(angle)
+        else:
+            self.initial_direction = direction
         self.energy = energy
 
         self.t = 0
@@ -323,9 +328,8 @@ class ParticleEntity(Entity):
             mask_bits=const.WALL_CATEGORY|const.PLAYER_CATEGORY|const.CRYSTAL_CATEGORY,
             group_index=const.PARTICLE_GROUP
         )
-        angle = random.random() * math.pi * 2
-        body.linearVelocity = Box2D.b2Vec2(math.cos(angle) * self.velocity * const.BOX2D_SCALE_FACTOR,
-                                           math.sin(angle) * self.velocity * const.BOX2D_SCALE_FACTOR)
+        body.linearVelocity = Box2D.b2Vec2(self.initial_direction[0] * self.velocity * const.BOX2D_SCALE_FACTOR,
+                                           self.initial_direction[1] * self.velocity * const.BOX2D_SCALE_FACTOR)
         return body
 
     def update(self, dt, level, **kwargs):
@@ -358,12 +362,15 @@ class ParticleEmitter(Entity):
         for _ in range(n_to_spawn):
             self.spawn_particle(level)
 
+    def get_sprite(self):
+        return Spritesheet.barrel
+
     def render(self, surf):
         center_xy = self.get_center_xy_on_screen()
-        sprite = Spritesheet.barrel
+        sprite = self.get_sprite()
         blit_xy = (center_xy[0] - sprite.get_width() // 2,
                    center_xy[1] - 3 * sprite.get_height() // 4)
-        surf.blit(Spritesheet.barrel, blit_xy)
+        surf.blit(sprite, blit_xy)
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
@@ -375,6 +382,24 @@ class ParticleEmitter(Entity):
         c_xy = self.get_center()
         for _ in range(n):
             level.add_entity(ParticleEntity(c_xy))
+
+
+class LaserEntity(ParticleEmitter):
+
+    def __init__(self, xy, direction, perturb=0.01, dims=(3, 3), weight=0.333):
+        super().__init__(xy, dims=dims, weight=weight)
+        self.angle = pygame.Vector2(direction).as_polar()[1] / 360 * math.pi * 2
+        self.perturb = perturb
+
+    def get_sprite(self):
+        return Spritesheet.laser
+
+    def spawn_particle(self, level: 'Level', n=1):
+        c_xy = self.get_center()
+        for _ in range(n):
+            new_angle = self.angle + 2 * (random.random() - 0.5) * self.perturb
+            new_dir = (math.cos(new_angle), math.sin(new_angle))
+            level.add_entity(ParticleEntity(c_xy, direction=new_dir))
 
 
 class ParticleAbsorber(Entity):
@@ -709,11 +734,18 @@ class Level:
 
         other_colors = {}
 
+        laser_bases = []
+        laser_tgts = []
+
         for y in range(size[1]):
             for x in range(size[0]):
                 clr = img.get_at((x, y))
                 if clr == (255, 0, 0):
                     res.add_entity(ParticleEmitter((x + 0.5, y + 0.5)), immediately=True)
+                elif clr == (196, 0, 0):
+                    laser_bases.append((x, y))
+                elif clr == (196, 64, 64):
+                    laser_tgts.append((x, y))
                 elif clr == (0, 0, 255):
                     res.add_entity(Player((x + 1, y + 1)), immediately=True)
                 elif clr == (0, 255, 0):
@@ -725,6 +757,12 @@ class Level:
                         other_colors[clr.rgb] = []
                     other_colors[clr.rgb].append((x + 0.5, y + 0.5))
                     img.set_at((x, y), (255, 255, 255))
+
+        if len(laser_tgts) > 0:
+            for (x, y) in laser_bases:
+                laser_tgts.sort(key=lambda pt: utils.dist2(pt, (x, y)))
+                direction = (laser_tgts[0][0] - x, laser_tgts[0][1] - y)
+                res.add_entity(LaserEntity((x + 0.5, y + 0.5), direction))
 
         for clr in other_colors:
             if clr[0] == clr[1] == clr[2]:

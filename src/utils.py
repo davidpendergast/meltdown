@@ -96,6 +96,10 @@ def tint_color(c1, c2, strength, max_shift=255):
             int(b1 + min(max_shift, strength * (b2 - b1))))
 
 
+def dist2(p1, p2):
+    return (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1])
+
+
 # yoinkers from https://stackoverflow.com/a/13790741
 def res_path(filepath):
     """ Get absolute path to resource, works for dev and for PyInstaller """

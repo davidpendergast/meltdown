@@ -65,6 +65,7 @@ class Spritesheet:
 
     player = None
     barrel = None
+    laser = None
 
     heart_icon = None
     skull_icon = None
@@ -81,6 +82,7 @@ class Spritesheet:
         y = 0
         Spritesheet.player = img.subsurface([0, y, 32, 32])
         Spritesheet.barrel = img.subsurface([32, y, 32, 32])
+        Spritesheet.laser = img.subsurface([96, 32, 32, 32])
 
         y += 32
         bar_sc = 2

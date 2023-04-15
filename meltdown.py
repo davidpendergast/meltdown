@@ -116,6 +116,7 @@ class ParticleArray:
     def __repr__(self):
         return f"{type(self).__name__}({len(self)} Particles)"
 
+
 if __name__ == "__main__":
     pygame.init()
     pygame.font.init()

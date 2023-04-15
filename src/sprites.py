@@ -6,6 +6,7 @@ import src.utils as utils
 _MAX_CACHE_SIZE = 1000
 _IMG_XFORM_CACHE = {}
 
+
 def resize(img: pygame.Surface, size, method='nearest', nocache=False):
     if size[0] is None and size[1] is None:
         return img
@@ -57,6 +58,7 @@ def tint(surf: pygame.Surface, color, strength: float, nocache=False):
 def sc(surf, factor):
     return pygame.transform.scale_by(surf, (factor, factor))
 
+
 def fl(surf, x=False, y=True):
     return pygame.transform.flip(surf, x, y)
 
@@ -64,6 +66,8 @@ def fl(surf, x=False, y=True):
 class Spritesheet:
 
     player = None
+    player_dead = None
+
     barrel = None
     laser = None
 
@@ -83,6 +87,8 @@ class Spritesheet:
         Spritesheet.player = img.subsurface([0, y, 32, 32])
         Spritesheet.barrel = img.subsurface([32, y, 32, 32])
         Spritesheet.laser = img.subsurface([96, 32, 32, 32])
+
+        Spritesheet.player_dead = img.subsurface([128, 32, 32, 32])
 
         y += 32
         bar_sc = 2

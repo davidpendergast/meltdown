@@ -1,5 +1,6 @@
 import os
 import src.readme_writer as readme_writer
+import pygame
 
 IS_DEV = os.path.exists(".gitignore")
 if IS_DEV:
@@ -30,6 +31,25 @@ BOX2D_SCALE_FACTOR = 1
 KEYS_HELD_THIS_FRAME = set()
 KEYS_PRESSED_THIS_FRAME = set()
 KEYS_RELEASED_THIS_FRAME = set()
+
+
+def has_keys(key_set, keys, cond=True):
+    if not cond:
+        return False
+    for key in keys:
+        if key in key_set:
+            return True
+    return False
+
+
+MOVE_UP_KEYS = (pygame.K_UP, pygame.K_w)
+MOVE_LEFT_KEYS = (pygame.K_LEFT, pygame.K_a)
+MOVE_RIGHT_KEYS = (pygame.K_RIGHT, pygame.K_d)
+MOVE_DOWN_KEYS = (pygame.K_DOWN, pygame.K_s)
+ACTION_KEYS = (pygame.K_SPACE, pygame.K_RETURN)
+RESTART_KEYS = (pygame.K_r,)
+ESCAPE_KEYS = (pygame.K_ESCAPE,)
+
 
 SPAWN_RATE = 100
 PARTICLE_DURATION = 5

@@ -6,6 +6,7 @@ import src.sounds as sounds
 import src.utils as utils
 import math
 
+
 class SceneManager:
 
     def __init__(self, start: 'Scene'):
@@ -38,11 +39,15 @@ class SceneManager:
     def do_quit(self):
         self.should_quit = True
 
+
 class Scene:
 
     def __init__(self):
         self.elapsed_time = 0
         self.manager = None
+
+    def is_active(self):
+        return self.manager is not None and self.manager.active_scene is self
 
     def on_start(self):
         pass
@@ -208,16 +213,16 @@ class OptionMenuScene(TitleScene):
         super().update(dt)
         if len(self.options) > 0:
             dy = 0
-            if pygame.K_UP in const.KEYS_PRESSED_THIS_FRAME or pygame.K_w in const.KEYS_PRESSED_THIS_FRAME:
+            if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.MOVE_UP_KEYS):
                 dy -= 1
-            if pygame.K_DOWN in const.KEYS_PRESSED_THIS_FRAME or pygame.K_s in const.KEYS_PRESSED_THIS_FRAME:
+            if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.MOVE_DOWN_KEYS):
                 dy += 1
 
             if dy != 0 and len(self.options) > 1:
                 self.sel_opt = (self.sel_opt + dy) % len(self.options)
                 self.selected_opt(self.options[self.sel_opt])
 
-            if pygame.K_SPACE in const.KEYS_PRESSED_THIS_FRAME or pygame.K_RETURN in const.KEYS_PRESSED_THIS_FRAME:
+            if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.ACTION_KEYS):
                 sel_name = self.options[self.sel_opt]
                 if self.opt_enabled(sel_name):
                     self.activate_option(sel_name)
@@ -316,8 +321,7 @@ class InstructionsMenuScene(OptionMenuScene):
         "[Esc] to Pause",
 
         "If you absorb too much radiation too quickly, you'll die. "
-        "Absorbed radiation in all things diminishes gradually over "
-        "time (including crystals)."
+        "Absorbed radiation diminishes gradually over time (in all objects)."
     ]
 
     def __init__(self, page=0):
@@ -347,4 +351,38 @@ class InstructionsMenuScene(OptionMenuScene):
                 self.manager.jump_to_scene(MainMenuScene())
             else:
                 self.manager.jump_to_scene(InstructionsMenuScene(self.page - 1))
+
+
+class SceneWrapperOptionMenuScene(OptionMenuScene):
+
+    def __init__(self, inner_scene: Scene, options=(), options_size=16, info_text=None, title_img=None, title_y_pos=0.333):
+        super().__init__(options=options, options_size=options_size, info_text=info_text,
+                         title_img=title_img, title_y_pos=title_y_pos)
+        self.inner_scene = inner_scene
+        self.overlay_img: pygame.Surface = None
+        self.max_overlay_alpha = 0.666
+        self.max_overlay_alpha_delay = 0.5
+
+    def update(self, dt):
+        super().update(dt)
+        self.inner_scene.update(dt)
+
+    def get_overlay_alpha(self):
+        return self.max_overlay_alpha * min(1.0, self.elapsed_time / self.max_overlay_alpha_delay)
+
+    def render_overlay(self, surf):
+        alpha = self.get_overlay_alpha()
+        if alpha > 0:
+            if self.overlay_img is None or self.overlay_img.get_size() != surf.get_size():
+                self.overlay_img = pygame.Surface(surf.get_size())
+                self.overlay_img.fill((0, 0, 0))
+            self.overlay_img.set_alpha(int(alpha * 255))
+            surf.blit(self.overlay_img, (0, 0))
+
+    def render(self, surf, skip=False):
+        if not skip:
+            self.inner_scene.render(surf)
+            self.render_overlay(surf)
+        super().render(surf)
+
 

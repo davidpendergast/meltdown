@@ -25,19 +25,28 @@ class GameplayScene(scenes.OverlayScene):
         self.level_name = LEVELS[n][:-4]
 
         filepath = utils.res_path(os.path.join(const.LEVEL_DIR, LEVELS[n]))
-        self.level = Level.load_level_from_file(filepath)
+        self.level = Level.load_level_from_file(self, filepath)
 
         self.level_buf = pygame.Surface((self.level.size[0] * const.DISPLAY_SCALE_FACTOR,
                                          self.level.size[1] * const.DISPLAY_SCALE_FACTOR))
         self.insets = (0, 16, 0, 32)
 
+        self.no_player_timer = 0
+        self.spawn_death_menu_delay = 0.666
+
     def update(self, dt):
         super().update(dt)
-        if pygame.K_r in const.KEYS_PRESSED_THIS_FRAME:
+        if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.RESTART_KEYS, cond=self.is_active()):
             self.manager.jump_to_scene(GameplayScene(self.n))
         self.level.update(dt)
 
-    def render(self, screen: pygame.Surface):
+        # player died
+        if self.level.player is None and self.is_active():
+            self.no_player_timer += dt
+            if self.no_player_timer >= self.spawn_death_menu_delay:
+                self.manager.jump_to_scene(YouDiedScene(self))
+
+    def render(self, screen: pygame.Surface, draw_world=True, draw_overlays=True, draw_dose_bar=True):
         if pygame.K_b in const.KEYS_HELD_THIS_FRAME:
             level_screen_rect = (0, 0, const.DIMS[0] * const.DISPLAY_SCALE_FACTOR,
                                  const.DIMS[1] * const.DISPLAY_SCALE_FACTOR)
@@ -45,23 +54,27 @@ class GameplayScene(scenes.OverlayScene):
                                [0, 0, const.DIMS[0] * const.BOX2D_SCALE_FACTOR,
                                 const.DIMS[1] * const.BOX2D_SCALE_FACTOR])
         else:
-            self.level_buf.fill(self.get_bg_color())
-            self.level.render_entities(self.level_buf)
+            if draw_world:
+                self.level_buf.fill(self.get_bg_color())
+                self.level.render_entities(self.level_buf)
 
-            level_area = [self.insets[0],
-                          self.insets[1],
-                          screen.get_width() - (self.insets[0] + self.insets[2]),
-                          screen.get_height() - (self.insets[1] + self.insets[3])]
-            screen.blit(self.level_buf, (level_area[0] + int(level_area[2] / 2 - self.level_buf.get_width() / 2),
-                                         level_area[1] + int(level_area[3] / 2 - self.level_buf.get_height() / 2)))
+                level_area = [self.insets[0],
+                              self.insets[1],
+                              screen.get_width() - (self.insets[0] + self.insets[2]),
+                              screen.get_height() - (self.insets[1] + self.insets[3])]
+                screen.blit(self.level_buf, (level_area[0] + int(level_area[2] / 2 - self.level_buf.get_width() / 2),
+                                             level_area[1] + int(level_area[3] / 2 - self.level_buf.get_height() / 2)))
 
-            super().render(screen)  # draw overlays
+            if draw_overlays:
+                super().render(screen)  # draw overlays
 
-            dose_pcnt = 1 if self.level.player is None else self.level.player.get_energy_pcnt()
-            dose_bar_size = (2 * const.SCREEN_DIMS[0] // 3, Spritesheet.heart_icon.get_height())
-            render_dose_bar(screen, (const.SCREEN_DIMS[0] // 2 - dose_bar_size[0] // 2,
-                                     const.SCREEN_DIMS[1] - const.EXTRA_SCREEN_HEIGHT // 2 - dose_bar_size[1] // 2,
-                                     dose_bar_size[0], dose_bar_size[1]), dose_pcnt)
+            if draw_dose_bar:
+                dose_pcnt = 1 if self.level.player is None else self.level.player.get_energy_pcnt()
+                dose_bar_size = (2 * const.SCREEN_DIMS[0] // 3, Spritesheet.heart_icon.get_height())
+                death_raise = round(12 * min(1.0, self.no_player_timer / self.spawn_death_menu_delay))
+                render_dose_bar(screen, (const.SCREEN_DIMS[0] // 2 - dose_bar_size[0] // 2,
+                                         const.SCREEN_DIMS[1] - const.EXTRA_SCREEN_HEIGHT // 2 - dose_bar_size[1] // 2 - death_raise,
+                                         dose_bar_size[0], dose_bar_size[1]), dose_pcnt)
 
 
 def render_dose_bar(surf: pygame.Surface, rect, pcnt):
@@ -84,15 +97,18 @@ def render_dose_bar(surf: pygame.Surface, rect, pcnt):
     surf.blit(pygame.transform.scale(Spritesheet.bar_empty, bar_rect[2:4]),
               (rect[0] + icon_w, rect[1], rect[2] - icon_w * 2, rect[3]))
 
+
 def screen_xy_to_world_xy(screen_xy, screen_rect, camera_rect, rounded=False):
     res = (screen_xy[0] / screen_rect[2] * camera_rect[2] + camera_rect[0],
            screen_xy[1] / screen_rect[3] * camera_rect[3] + camera_rect[1])
     return (round(res[0]), round(res[1])) if rounded else res
 
+
 def world_xy_to_screen_xy(world_xy, screen_rect, camera_rect, rounded=False):
     res = ((world_xy[0] - camera_rect[0]) * screen_rect[2] / camera_rect[2],
            (world_xy[1] - camera_rect[1]) * screen_rect[3] / camera_rect[3])
     return (round(res[0]), round(res[1])) if rounded else res
+
 
 def draw_fixture(surf, fixture: Box2D.b2Fixture, camera_rect, color=(255, 255, 255), width=1):
     if isinstance(fixture.shape, Box2D.b2CircleShape):
@@ -112,6 +128,7 @@ def draw_fixture(surf, fixture: Box2D.b2Fixture, camera_rect, color=(255, 255, 2
         #     for surf_pt in surf_pts:
         #         pygame.draw.circle(surf, DRAW_PTS[0], surf_pt, DRAW_PTS[1])
 
+
 def draw_body(surf, body, camera_rect, color=None, width=1):
     if color is None:
         if body.userData is not None and 'color' in body.userData:
@@ -121,9 +138,38 @@ def draw_body(surf, body, camera_rect, color=None, width=1):
     for fix in body.fixtures:
         draw_fixture(surf, fix, camera_rect, color=color, width=width)
 
+
 def render_box2d_world(surf, world: Box2D.b2World, camera_rect):
     for body in world.bodies:
         draw_body(surf, body, camera_rect)
+
+
+class YouDiedScene(scenes.SceneWrapperOptionMenuScene):
+
+    def __init__(self, inner_scene:  GameplayScene):
+        super().__init__(inner_scene, options=('retry', 'exit'), title_img=UiSheet.TITLES["you_died"])
+
+    def do_retry(self):
+        if isinstance(self.inner_scene, GameplayScene):
+            self.manager.jump_to_scene(GameplayScene(self.inner_scene.n))
+
+    def update(self, dt):
+        super().update(dt)
+        if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.RESTART_KEYS):
+            self.do_retry()
+
+    def render(self, surf):
+        self.inner_scene.render(surf, draw_world=True, draw_overlays=False, draw_dose_bar=True)
+        self.render_overlay(surf)
+        self.inner_scene.render(surf, draw_world=False, draw_overlays=True, draw_dose_bar=False)
+        super().render(surf, skip=True)
+
+    def activate_option(self, opt_name):
+        super().activate_option(opt_name)
+        if opt_name == 'retry':
+            self.do_retry()
+        elif opt_name == 'exit':
+            self.manager.jump_to_scene(scenes.MainMenuScene())
 
 
 ENT_ID_CNT = 0
@@ -175,27 +221,6 @@ class Entity:
 
     def convert_to_screen_pt(self, xy):
         return const.DISPLAY_SCALE_FACTOR * xy[0], const.DISPLAY_SCALE_FACTOR * xy[1]
-
-    # def resolve_rect_collision_with_level(self, level, geom_thresh=0.1) -> bool:
-    #     rect = self.get_rect()
-    #     if level.is_colliding(rect, geom_thresh=geom_thresh):
-    #         x, y = rect[0], rect[1]
-    #         x_to_check = (x, int(x) + 1, int(x + rect[2]) - rect[2])
-    #         y_to_check = (y, int(y) + 1, int(y + rect[3]) - rect[3])
-    #
-    #         candidate_xys = []
-    #         for cx in x_to_check:
-    #             for cy in y_to_check:
-    #                 candidate_xys.append((cx, cy))
-    #         candidate_xys.sort(key=lambda cxy_: (x - cxy_[0])**2 + (y - cxy_[1])**2)
-    #
-    #         for cxy in candidate_xys:
-    #             if not level.is_colliding((cxy[0], cxy[1], rect[2], rect[3])):
-    #                 self._xy = cxy
-    #                 return True
-    #         print(f"Failed to resolve collision at: {self._xy}")
-    #         return False
-    #     return True
 
     def __hash__(self):
         return self.uid
@@ -478,9 +503,6 @@ class WallEntity(Entity):
 
     def __init__(self, poly_list, **kwargs):
         super().__init__(**kwargs)
-
-        # chull = convexhull.ConvexHull(points=poly_list, check_colinear=True)
-        #self._poly_list = chull.get_hull_points()
         self._poly_list = convexhull.convexHull(poly_list)
 
     def __repr__(self):
@@ -552,23 +574,23 @@ class Player(ParticleAbsorber):
     def update(self, dt, level, **kwargs):
         super().update(dt, level)
         move_dir = pygame.Vector2()
+        scene_is_active = level.scene.is_active()
 
-        keys = const.KEYS_HELD_THIS_FRAME
-        if pygame.K_a in keys or pygame.K_LEFT in keys:
+        if const.has_keys(const.KEYS_HELD_THIS_FRAME, const.MOVE_LEFT_KEYS, cond=scene_is_active):
             move_dir.x -= 1
-        if pygame.K_d in keys or pygame.K_RIGHT in keys:
+        if const.has_keys(const.KEYS_HELD_THIS_FRAME, const.MOVE_RIGHT_KEYS, cond=scene_is_active):
             move_dir.x += 1
-        if pygame.K_w in keys or pygame.K_UP in keys:
+        if const.has_keys(const.KEYS_HELD_THIS_FRAME, const.MOVE_UP_KEYS, cond=scene_is_active):
             move_dir.y -= 1
-        if pygame.K_s in keys or pygame.K_DOWN in keys:
+        if const.has_keys(const.KEYS_HELD_THIS_FRAME, const.MOVE_DOWN_KEYS, cond=scene_is_active):
             move_dir.y += 1
         if move_dir.magnitude() > 0:
             move_dir.scale_to_length(const.MOVE_SPEED)
             self.body.linearVelocity = (move_dir * const.BOX2D_SCALE_FACTOR).xy
             self.last_dir = move_dir
 
-        if pygame.K_SPACE in const.KEYS_PRESSED_THIS_FRAME or \
-                (pygame.K_SPACE in const.KEYS_HELD_THIS_FRAME and self.grab_joint is None):
+        if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.ACTION_KEYS, cond=scene_is_active) or \
+                (const.has_keys(const.KEYS_HELD_THIS_FRAME, const.ACTION_KEYS, cond=scene_is_active) and self.grab_joint is None):
             grab_pt = pygame.Vector2(self.get_center()) + pygame.Vector2(self.last_dir).normalize() * (self.grab_reach + self.dims[0] / 2)
             fix = [f for f in all_fixtures_at_point(level.world, grab_pt)
                    if not isinstance(f.body.userData['entity'], ParticleEntity)]
@@ -586,10 +608,15 @@ class Player(ParticleAbsorber):
                     collideConnected=True)
                 level.add_entity(AnimationEntity(grab_pt, color=(225, 225, 225), radius=8, duration=0.25))
                 sounds.play_sound('click')
-        elif pygame.K_SPACE in const.KEYS_RELEASED_THIS_FRAME:
+        elif const.has_keys(const.KEYS_RELEASED_THIS_FRAME, const.ACTION_KEYS, cond=scene_is_active):
             if self.grab_joint is not None:
                 level.world.DestroyJoint(self.grab_joint)
                 self.grab_joint = None
+
+        if self.get_energy_pcnt() >= 1.0:
+            level.add_entity(DeadPlayerEntity(self.get_center(), self.get_display_angle()))
+            self.grab_joint = None  # this ref can segfault after the removal
+            level.remove_entity(self)
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
@@ -646,11 +673,29 @@ class AnimationEntity(Entity):
         pygame.draw.circle(surf, self.color, (cx, cy), self.radius * (1 - math.cos(t * math.pi * 2)), width=1)
 
 
+class DeadPlayerEntity(AnimationEntity):
+
+    def __init__(self, xy, angle):
+        super().__init__(xy, duration=-1)
+        self.angle = angle
+
+    def get_render_layer(self):
+        return -1  # under everything
+
+    def render(self, surf):
+        center_xy_on_screen = self.get_center_xy_on_screen()
+        sprite = pygame.transform.rotate(Spritesheet.player_dead, -self.angle + 90)
+        blit_xy = (center_xy_on_screen[0] - sprite.get_width() // 2,
+                   center_xy_on_screen[1] - sprite.get_height() // 2)
+        surf.blit(sprite, blit_xy)
+
+
 class Level:
 
-    def __init__(self, size, spawn_rate=const.SPAWN_RATE):
+    def __init__(self, scene, size, spawn_rate=const.SPAWN_RATE):
         self.size = size
-        # self.particles: ParticleArray = ParticleArray()
+        self.scene = scene
+
         self.spawn_rate = spawn_rate
         self.spatial_hash = {}
 
@@ -727,10 +772,10 @@ class Level:
             ent.render(surf)
 
     @staticmethod
-    def load_level_from_file(filepath) -> 'Level':
+    def load_level_from_file(scene, filepath) -> 'Level':
         img = pygame.image.load(filepath).convert()
         size = img.get_size()
-        res = Level(size)
+        res = Level(scene, size)
 
         other_colors = {}
 

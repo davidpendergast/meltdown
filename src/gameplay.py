@@ -34,6 +34,9 @@ class GameplayScene(scenes.OverlayScene):
         self.no_player_timer = 0
         self.spawn_death_menu_delay = 0.666
 
+        self.crystals_satisfied_timer = 0
+        self.level_win_delay = 1
+
     def update(self, dt):
         super().update(dt)
         if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.RESTART_KEYS, cond=self.is_active()):
@@ -41,10 +44,19 @@ class GameplayScene(scenes.OverlayScene):
         self.level.update(dt)
 
         # player died
-        if self.level.player is None and self.is_active():
-            self.no_player_timer += dt
-            if self.no_player_timer >= self.spawn_death_menu_delay:
-                self.manager.jump_to_scene(YouDiedScene(self))
+        if self.is_active():
+            if self.level.player is None:
+                self.no_player_timer += dt
+                if self.no_player_timer >= self.spawn_death_menu_delay:
+                    self.manager.jump_to_scene(YouDiedScene(self))
+
+            crystals = [ent for ent in self.level.all_entities() if isinstance(ent, CrystalEntity)]
+            if len(crystals) == 0 or all(cry.is_fully_charged() for cry in crystals):
+                self.crystals_satisfied_timer += dt
+                if self.crystals_satisfied_timer >= self.level_win_delay:
+                    self.manager.jump_to_scene(SuccessScene(self))
+            else:
+                self.crystals_satisfied_timer = max(0, self.crystals_satisfied_timer - dt)
 
     def render(self, screen: pygame.Surface, draw_world=True, draw_overlays=True, draw_dose_bar=True):
         if pygame.K_b in const.KEYS_HELD_THIS_FRAME:
@@ -117,16 +129,11 @@ def draw_fixture(surf, fixture: Box2D.b2Fixture, camera_rect, color=(255, 255, 2
         surf_pt = world_xy_to_screen_xy(pt, surf.get_rect(), camera_rect)
         r = round(fixture.shape.radius / const.BOX2D_SCALE_FACTOR * surf.get_width() / camera_rect[2])
         pygame.draw.circle(surf, color, surf_pt, r, width=width)
-        # if DRAW_PTS:
-        #     pygame.draw.circle(surf, DRAW_PTS[0], surf_pt, DRAW_PTS[1])
     else:
         xform_pts_b2 = [fixture.body.GetWorldPoint(pt) for pt in fixture.shape.vertices]
         xform_pts = [(x / const.BOX2D_SCALE_FACTOR, y / const.BOX2D_SCALE_FACTOR) for (x, y) in xform_pts_b2]
         surf_pts = [world_xy_to_screen_xy(pt, surf.get_rect(), camera_rect) for pt in xform_pts]
         pygame.draw.polygon(surf, color, surf_pts, width=width)
-        # if DRAW_PTS:
-        #     for surf_pt in surf_pts:
-        #         pygame.draw.circle(surf, DRAW_PTS[0], surf_pt, DRAW_PTS[1])
 
 
 def draw_body(surf, body, camera_rect, color=None, width=1):
@@ -158,7 +165,7 @@ class YouDiedScene(scenes.SceneWrapperOptionMenuScene):
         if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.RESTART_KEYS):
             self.do_retry()
 
-    def render(self, surf):
+    def render(self, surf, skip=False):
         self.inner_scene.render(surf, draw_world=True, draw_overlays=False, draw_dose_bar=True)
         self.render_overlay(surf)
         self.inner_scene.render(surf, draw_world=False, draw_overlays=True, draw_dose_bar=False)
@@ -170,6 +177,28 @@ class YouDiedScene(scenes.SceneWrapperOptionMenuScene):
             self.do_retry()
         elif opt_name == 'exit':
             self.manager.jump_to_scene(scenes.MainMenuScene())
+
+
+class SuccessScene(scenes.SceneWrapperOptionMenuScene):
+    def __init__(self, inner_scene:  GameplayScene):
+        super().__init__(inner_scene, options=('next',), title_img=UiSheet.TITLES["success"])
+
+    def do_next(self):
+        if isinstance(self.inner_scene, GameplayScene):
+            if self.inner_scene.n < len(LEVELS) - 1:
+                self.manager.jump_to_scene(GameplayScene(self.inner_scene.n + 1))
+            else:
+                self.manager.jump_to_scene(scenes.YouWinMenu())
+
+    def activate_option(self, opt_name):
+        if opt_name == 'next':
+            self.do_next()
+
+    def render(self, surf, skip=False):
+        self.inner_scene.render(surf, draw_world=True, draw_overlays=False, draw_dose_bar=False)
+        self.render_overlay(surf)
+        self.inner_scene.render(surf, draw_world=False, draw_overlays=True, draw_dose_bar=False)
+        super().render(surf, skip=True)
 
 
 ENT_ID_CNT = 0
@@ -467,6 +496,9 @@ class CrystalEntity(ParticleAbsorber):
     def __init__(self, xy, crystal_type=-1, energy_limit=const.CRYSTAL_LIMIT, **kwargs):
         super().__init__(xy=xy, dims=(3, 3), energy_limit=energy_limit, **kwargs)
         self.crystal_type = int(3 * random.random()) if crystal_type < 0 else crystal_type
+
+    def is_fully_charged(self):
+        return self.get_energy_pcnt() >= 1.0
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         x, y = self._xy

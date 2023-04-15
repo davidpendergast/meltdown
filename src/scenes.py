@@ -306,6 +306,8 @@ class MainMenuScene(OptionMenuScene):
             self.manager.jump_to_scene(InstructionsMenuScene())
         elif opt_name == 'credits':
             self.manager.jump_to_scene(CreditsScene())
+        elif opt_name == 'levels' and const.IS_DEV:
+            self.manager.jump_to_scene(YouWinMenu())
         elif opt_name == 'exit':
             self.manager.do_quit()
 
@@ -361,16 +363,26 @@ class InstructionsMenuScene(OptionMenuScene):
 class YouWinMenu(OptionMenuScene):
 
     INFOS = [
-        "Thanks to your bravery, the crystals were powered, and the kingdom was saved. The Crystal King sends his regards.",
+        "Thanks to your bravery, the crystals were powered and the crisis was averted.",
+        "...?",
+        "<show king>",
+        "The Crystal King sends his regards."
     ]
 
     def __init__(self, page=0):
         super().__init__(options=('continue',), info_text=YouWinMenu.INFOS[page],
                          title_img=sprites.UiSheet.TITLES['you_win'],
-                         bg_img=sprites.UiSheet.WIN_BG,
+                         bg_img=sprites.UiSheet.WIN_BG if YouWinMenu.INFOS[page] == "<show king>" else sprites.UiSheet.EMPTY_BG,
                          overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['thin_2x'],
                          overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
         self.page = page
+
+    def render(self, surf):
+        if YouWinMenu.INFOS[self.page] == "<show king>":
+            self.render_bg(surf)
+            self.render_overlays(surf)
+        else:
+            super().render(surf)
 
     def activate_option(self, opt_name):
         if opt_name == 'continue':

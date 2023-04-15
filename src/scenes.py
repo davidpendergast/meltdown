@@ -383,6 +383,10 @@ class YouWinMenu(OptionMenuScene):
                          overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
         self.page = page
 
+    def on_start(self):
+        if YouWinMenu.INFOS[self.page] == "<show king>":
+            sounds.play_sound('random')
+
     def render(self, surf):
         if YouWinMenu.INFOS[self.page] == "<show king>":
             self.render_bg(surf)

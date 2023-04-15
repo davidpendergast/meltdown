@@ -1,7 +1,10 @@
-shield.png       # 7/10, requires speed, precision, also pretty cool
-the_box.png      # 9/10, requires precision, but is very cool
-storage.png      # 3/10
-reflect.png      # 8/10, need to realize regular walls don't steal energy from particles
+push.png         # 0/10, tutorial
+pull.png         # 1/10, tutorial, teaches to pull
 barrel_push.png  # 2/10 easy, teach to push barrels
+storage.png      # 3/10
+star.png         # 4/10, cool-looking, easy to solve accidentally
 i_can_drag.png   # 5/10 med, learn to use 
+shield.png       # 7/10, requires speed, precision, also pretty cool
+reflect.png      # 8/10, need to realize regular walls don't steal energy from particles
 gauntlet.png     # 8/10 but cheeseable
+the_box.png      # 9/10, requires precision, but is very cool

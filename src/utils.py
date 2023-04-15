@@ -100,6 +100,19 @@ def dist2(p1, p2):
     return (p1[0] - p2[0]) * (p1[0] - p2[0]) + (p1[1] - p2[1]) * (p1[1] - p2[1])
 
 
+def bounding_box(pts):
+    min_x = float('inf')
+    max_x = -float('inf')
+    min_y = float('inf')
+    max_y = -float('inf')
+    for (x, y) in pts:
+        min_x = min(x, min_x)
+        max_x = max(x, max_x)
+        min_y = min(y, min_y)
+        max_y = max(y, max_y)
+    return (min_x, min_y, max_x - min_x, max_y - min_y)
+
+
 # yoinkers from https://stackoverflow.com/a/13790741
 def res_path(filepath):
     """ Get absolute path to resource, works for dev and for PyInstaller """

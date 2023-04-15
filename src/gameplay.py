@@ -52,6 +52,14 @@ class GameplayScene(scenes.OverlayScene):
         super().update(dt)
         if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.RESTART_KEYS, cond=self.is_active()):
             self.manager.jump_to_scene(GameplayScene(self.n))
+
+        # debug level skipping
+        if const.IS_DEV and const.has_keys(const.KEYS_HELD_THIS_FRAME, (pygame.K_LSHIFT,), cond=self.is_active()):
+            if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, (pygame.K_LEFT,)) and self.n > 0:
+                self.manager.jump_to_scene(GameplayScene(self.n - 1))  # go back a level
+            elif const.has_keys(const.KEYS_PRESSED_THIS_FRAME, (pygame.K_RIGHT,)) and self.n < len(LEVELS) - 1:
+                self.manager.jump_to_scene(GameplayScene(self.n + 1))  # go forward a level
+
         self.level.update(dt)
 
         # player died
@@ -839,6 +847,14 @@ class Level:
         laser_bases = []
         laser_tgts = []
 
+        def is_filled_rect(pts):
+            rect = utils.bounding_box(pts)
+            for x in range(int(rect[0]), int(rect[0] + rect[2])):
+                for y in range(int(rect[1]), int(rect[1] + rect[3])):
+                    if (x, y) not in pts:
+                        return False, rect
+            return True, rect
+
         for y in range(size[1]):
             for x in range(size[0]):
                 clr = img.get_at((x, y))
@@ -857,8 +873,7 @@ class Level:
                 else:
                     if clr.rgb not in other_colors:
                         other_colors[clr.rgb] = []
-                    other_colors[clr.rgb].append((x + 0.5, y + 0.5))
-                    img.set_at((x, y), (255, 255, 255))
+                    other_colors[clr.rgb].append((x, y))
 
         if len(laser_tgts) > 0:
             for (x, y) in laser_bases:
@@ -867,9 +882,18 @@ class Level:
                 res.add_entity(LaserEntity((x + 0.5, y + 0.5), direction))
 
         for clr in other_colors:
-            if clr[0] == clr[1] == clr[2]:
-                res.add_entity(WallEntity(other_colors[clr]), immediately=True)
+            filled, rect = is_filled_rect(other_colors[clr])
+            if filled:
+                pts = [(rect[0], rect[1]),
+                       (rect[0] + rect[2] + 1, rect[1]),
+                       (rect[0] + rect[2] + 1, rect[1] + rect[3] + 1),
+                       (rect[0], rect[1] + rect[3] + 1)]
             else:
-                res.add_entity(PolygonEntity(other_colors[clr]), immediately=True)
+                pts = [(x + 0.5, y + 0.5) for (x, y) in other_colors[clr]]
+
+            if clr[0] == clr[1] == clr[2]:
+                res.add_entity(WallEntity(pts), immediately=True)
+            else:
+                res.add_entity(PolygonEntity(pts), immediately=True)
 
         return res

@@ -410,11 +410,27 @@ class ParticleEntity(Entity):
 
     def update(self, dt, level, **kwargs):
         self.t += dt
+
+        # when the particle's getting close to the end of its duration,
+        # start decaying its energy so it reaches zero when it's deleted.
+        if 0.9 < self.t / self.duration < 1:
+            t_remaining = self.duration - self.t
+            eol_decay = min(self.energy, dt / t_remaining * self.energy)
+            self.energy -= eol_decay
+
         if self.duration < self.t or self.energy < const.PARTICLE_ENERGY / 100:
             level.remove_entity(self)
 
+
     def get_color(self):
-        return tint(const.RADIATION_COLOR, (0, 0, 0), 0.666 * (1 - max(0, min(1, (self.energy / const.PARTICLE_ENERGY)))))
+        max_tint = 0.666
+        lightness = max(0, min(1, self.energy / const.PARTICLE_ENERGY))
+
+        # life_prog = self.t / self.duration
+        # if life_prog > 0.85:
+        #     lightness *= max(0, min(1, (1 - life_prog) / (1 - 0.85)))
+
+        return tint(const.RADIATION_COLOR, (0, 0, 0), max_tint * (1 - lightness))
 
     def render(self, surf):
         cx, cy = self.get_center_xy_on_screen()
@@ -495,10 +511,11 @@ class ParticleAbsorber(Entity):
         self.absorb_rate = const.ENERGY_TRANSFER_ON_COLLISION
         self.decay_rate = const.AMBIENT_ENERGY_DECAY_RATE
 
-    def absorb_particle(self, p_ent: ParticleEntity):
+    def absorb_particle(self, p_ent: ParticleEntity) -> float:
         to_absorb = p_ent.energy * self.absorb_rate
         p_ent.energy -= to_absorb
         self.energy_accum += to_absorb
+        return to_absorb
 
     def get_energy_pcnt(self):
         if self.energy_limit <= 0:
@@ -544,6 +561,7 @@ class CrystalEntity(ParticleAbsorber):
 
         if not was_full and self.get_energy_pcnt() >= 1:
             level.add_entity(AnimationEntity(self.get_center(), duration=0.5))
+            sounds.play_sound('random')
 
     def render(self, surf):
         cx, cy = self.get_center_xy_on_screen()
@@ -694,6 +712,7 @@ class Player(ParticleAbsorber):
             level.add_entity(DeadPlayerEntity(self.get_center(), self.get_display_angle()))
             self.grab_joint = None  # this ref can segfault after the removal
             level.remove_entity(self)
+            sounds.play_sound('explosion')
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)
@@ -720,6 +739,14 @@ class Player(ParticleAbsorber):
                    center_xy_on_screen[1] - sprite.get_height() // 2)
         surf.blit(sprite, blit_xy)
 
+    def absorb_particle(self, p_ent: ParticleEntity) -> float:
+        pre_pcnt = self.get_energy_pcnt()
+        super().absorb_particle(p_ent)
+        post_pct = self.get_energy_pcnt()
+
+        q = 5
+        if int(pre_pcnt * q) != int(post_pct * q):
+            sounds.play_sound('hitHurt', volume=post_pct)
 
 class AnimationEntity(Entity):
 

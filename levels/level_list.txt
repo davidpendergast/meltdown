@@ -1,4 +1,3 @@
+barrel_push.png
 i_can_drag.png
 gauntlet.png
-laser.png
-test.png

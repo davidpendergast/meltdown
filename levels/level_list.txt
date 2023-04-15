@@ -1,4 +1,6 @@
-storage.png
+shield.png       # 7/10, requires speed, precision, also pretty cool
+the_box.png      # 9/10, requires precision, but is very cool
+storage.png      # 3/10
 reflect.png      # 8/10, need to realize regular walls don't steal energy from particles
 barrel_push.png  # 2/10 easy, teach to push barrels
 i_can_drag.png   # 5/10 med, learn to use 

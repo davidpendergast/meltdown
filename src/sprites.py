@@ -84,10 +84,10 @@ class Spritesheet:
 
         y += 32
         bar_sc = 2
-        Spritesheet.heart_icon = sc(img.subsurface([0, y, 17, 17]), bar_sc)
-        Spritesheet.skull_icon = sc(img.subsurface([17 + 46, y, 17, 17]), bar_sc)
-        Spritesheet.bar_empty = sc(img.subsurface([17, y, 46, 17]), bar_sc)
-        Spritesheet.bar_full = sc(img.subsurface([15, y + 16, 50, 17]), bar_sc)
+        Spritesheet.heart_icon = sc(img.subsurface([0, y, 19, 20]), bar_sc)
+        Spritesheet.skull_icon = sc(img.subsurface([19 + 44, y, 19, 20]), bar_sc)
+        Spritesheet.bar_empty = sc(img.subsurface([19, y, 44, 20]), bar_sc)
+        Spritesheet.bar_full = sc(img.subsurface([15, y + 16, 50, 20]), bar_sc)
 
         for i in range(10):
             y = 64 + (i % 5) * 32

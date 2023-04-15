@@ -12,6 +12,8 @@ class SceneManager:
         self.active_scene = None
         self._next_scene = start
 
+        self.should_quit = False
+
     def jump_to_scene(self, next_scene):
         self._next_scene = next_scene
 
@@ -33,6 +35,8 @@ class SceneManager:
             surf.fill(bg_color)
         self.active_scene.render(surf)
 
+    def do_quit(self):
+        self.should_quit = True
 
 class Scene:
 
@@ -59,11 +63,59 @@ class Scene:
         return {}
 
 
-class TitleScene(Scene):
+class OverlayScene(Scene):
+
+    def __init__(self, overlay_top_imgs=(), overlay_bottom_imgs=()):
+        super().__init__()
+        self.overlay_top_imgs = overlay_top_imgs
+        self.overlay_bottom_imgs = overlay_bottom_imgs
+
+    def get_overlay_y_offset(self, for_surf, side='top'):
+        start, end = (16, 0)
+        duration = 1.333 / const.MENU_ANIM_SPEED
+        return utils.lerp(start, end, self.elapsed_time / duration)
+
+    def render(self, surf: pygame.Surface):
+        super().render(surf)
+        self.render_overlays(surf)
+
+    def render_overlays(self, surf: pygame.Surface):
+        y_offs = self.get_overlay_y_offset(surf, side='top')
+        if len(self.overlay_top_imgs) == 1:
+            top_overlay_resized = sprites.resize(self.overlay_top_imgs[0], (surf.get_width(),
+                                                                            self.overlay_top_imgs[0].get_height()))
+            surf.blit(top_overlay_resized, (0, -y_offs))
+        elif len(self.overlay_top_imgs) == 3:
+            middle_overlay_resized = sprites.resize(self.overlay_top_imgs[1],
+                                                    (surf.get_width() - self.overlay_top_imgs[0].get_width() -
+                                                     self.overlay_top_imgs[2].get_width(),
+                                                     self.overlay_top_imgs[1].get_height()))
+            surf.blit(middle_overlay_resized, (self.overlay_top_imgs[0].get_width(), -y_offs))
+            surf.blit(self.overlay_top_imgs[0], (0, -y_offs))
+            surf.blit(self.overlay_top_imgs[2], (surf.get_width() - self.overlay_top_imgs[2].get_width(), -y_offs))
+
+        y_offs = self.get_overlay_y_offset(surf, side='bottom')
+        if len(self.overlay_bottom_imgs) == 1:
+            bottom_overlay_resized = sprites.resize(self.overlay_bottom_imgs[0],
+                                                    (surf.get_width(), self.overlay_bottom_imgs[0].get_height()))
+            surf.blit(bottom_overlay_resized, (0, surf.get_height() - bottom_overlay_resized.get_height() + y_offs))
+        elif len(self.overlay_bottom_imgs) == 3:
+            middle_overlay_resized = sprites.resize(self.overlay_bottom_imgs[1],
+                                                    (surf.get_width() - self.overlay_bottom_imgs[0].get_width() -
+                                                     self.overlay_bottom_imgs[2].get_width(),
+                                                     self.overlay_bottom_imgs[1].get_height()))
+            surf.blit(middle_overlay_resized, (self.overlay_bottom_imgs[0].get_width(),
+                                               surf.get_height() - middle_overlay_resized.get_height() + y_offs))
+            surf.blit(self.overlay_bottom_imgs[0],
+                      (0, surf.get_height() - self.overlay_bottom_imgs[0].get_height() + y_offs))
+            surf.blit(self.overlay_bottom_imgs[2], (surf.get_width() - self.overlay_bottom_imgs[2].get_width(),
+                                                    surf.get_height() - self.overlay_bottom_imgs[2].get_height() + y_offs))
+
+class TitleScene(OverlayScene):
 
     def __init__(self, title_img=None, title_y_pos=0.333, bg_img=None,
                  overlay_top_imgs=(), overlay_bottom_imgs=()):
-        super().__init__()
+        super().__init__(overlay_top_imgs=overlay_top_imgs, overlay_bottom_imgs=overlay_bottom_imgs)
 
         title_img_size = 48
         if isinstance(title_img, tuple):
@@ -73,8 +125,6 @@ class TitleScene(Scene):
         self.title_y_pos = title_y_pos
         self._title_rect = (0, 0, 0, 0)
 
-        self.overlay_top_imgs = overlay_top_imgs
-        self.overlay_bottom_imgs = overlay_bottom_imgs
         self.bg_img = bg_img
 
     def update(self, dt):
@@ -82,11 +132,6 @@ class TitleScene(Scene):
 
     def on_start(self):
         sounds.play_song(utils.res_path(const.MAIN_SONG))
-
-    def get_overlay_y_offset(self, for_surf, side='top'):
-        start, end = (16, 0)
-        duration = 1.333 / const.MENU_ANIM_SPEED
-        return utils.lerp(start, end, self.elapsed_time / duration)
 
     def get_title_tint(self):
         color = (64, 0, 0)
@@ -117,33 +162,7 @@ class TitleScene(Scene):
             surf.blit(title_tinted, title_xy)
             self._title_rect = (*title_xy, title_tinted.get_width(), title_tinted.get_height())
 
-        y_offs = self.get_overlay_y_offset(surf, side='top')
-        if len(self.overlay_top_imgs) == 1:
-            top_overlay_resized = sprites.resize(self.overlay_top_imgs[0], (surf.get_width(),
-                                                                            self.overlay_bottom_imgs[0].get_height()))
-            surf.blit(top_overlay_resized, (0, -y_offs))
-        elif len(self.overlay_top_imgs) == 3:
-            middle_overlay_resized = sprites.resize(self.overlay_top_imgs[1],
-                (surf.get_width() - self.overlay_top_imgs[0].get_width() - self.overlay_top_imgs[2].get_width(),
-                 self.overlay_top_imgs[1].get_height()))
-            surf.blit(middle_overlay_resized, (self.overlay_top_imgs[0].get_width(), -y_offs))
-            surf.blit(self.overlay_top_imgs[0], (0, -y_offs))
-            surf.blit(self.overlay_top_imgs[2], (surf.get_width() - self.overlay_top_imgs[2].get_width(), -y_offs))
-
-        y_offs = self.get_overlay_y_offset(surf, side='bottom')
-        if len(self.overlay_bottom_imgs) == 1:
-            bottom_overlay_resized = sprites.resize(self.overlay_bottom_imgs[0],
-                                                    (surf.get_width(), self.overlay_bottom_imgs[0].get_height()))
-            surf.blit(bottom_overlay_resized, (0, surf.get_height() - bottom_overlay_resized.get_height() + y_offs))
-        elif len(self.overlay_bottom_imgs) == 3:
-            middle_overlay_resized = sprites.resize(self.overlay_bottom_imgs[1],
-                (surf.get_width() - self.overlay_bottom_imgs[0].get_width() - self.overlay_bottom_imgs[2].get_width(),
-                 self.overlay_bottom_imgs[1].get_height()))
-            surf.blit(middle_overlay_resized, (self.overlay_bottom_imgs[0].get_width(),
-                                               surf.get_height() - self.overlay_bottom_imgs[0].get_height() + y_offs))
-            surf.blit(self.overlay_bottom_imgs[0], (0, surf.get_height() - self.overlay_bottom_imgs[0].get_height() + y_offs))
-            surf.blit(self.overlay_bottom_imgs[2], (surf.get_width() - self.overlay_bottom_imgs[2].get_width(),
-                                                    surf.get_height() - self.overlay_bottom_imgs[2].get_height() + y_offs))
+        super().render(surf)  # draw overlays
 
 
 class OptionMenuScene(TitleScene):
@@ -204,6 +223,12 @@ class OptionMenuScene(TitleScene):
                     self.activate_option(sel_name)
                 else:
                     sounds.play_sound('error')
+
+        if pygame.K_ESCAPE in const.KEYS_PRESSED_THIS_FRAME:
+            if 'back' in self.options and self.opt_enabled('back'):
+                self.activate_option('back')
+            elif 'exit' in self.options and self.opt_enabled('exit'):
+                self.activate_option('exit')
 
     def get_color(self, opt_name):
         if opt_name not in self.options:
@@ -271,6 +296,8 @@ class MainMenuScene(OptionMenuScene):
         super().activate_option(opt_name)
         if opt_name == 'start':
             self.manager.jump_to_scene(InstructionsMenuScene())
+        elif opt_name == 'exit':
+            self.manager.do_quit()
 
     def on_start(self):
         sounds.play_song(utils.res_path(const.MAIN_SONG))
@@ -311,7 +338,8 @@ class InstructionsMenuScene(OptionMenuScene):
     def activate_option(self, opt_name):
         super().activate_option(opt_name)
         if opt_name == 'start':
-            self.manager.jump_to_scene(MainMenuScene())  # todo jump to LEVEL 1
+            import src.gameplay as gameplay
+            self.manager.jump_to_scene(gameplay.GameplayScene(0))
         elif opt_name == 'next':
             self.manager.jump_to_scene(InstructionsMenuScene(self.page + 1))
         elif opt_name == 'back':

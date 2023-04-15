@@ -3,6 +3,8 @@ A puzzle game about radiation built for [Pygame Community Easter Jam 2023](https
 
 Here are the five most recent gifs committed:
 
+![07-menus.gif](gifs/07-menus.gif?raw=true "07-menus")
+
 ![06-gameplay.gif](gifs/06-gameplay.gif?raw=true "06-gameplay")
 
 ![05-crystals-and-particle-physics.gif](gifs/05-crystals-and-particle-physics.gif?raw=true "05-crystals-and-particle-physics")
@@ -10,5 +12,3 @@ Here are the five most recent gifs committed:
 ![04-pulling-boxes.gif](gifs/04-pulling-boxes.gif?raw=true "04-pulling-boxes")
 
 ![03-pushin-boxes.gif](gifs/03-pushin-boxes.gif?raw=true "03-pushin-boxes")
-
-![02-player.gif](gifs/02-player.gif?raw=true "02-player")

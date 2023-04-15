@@ -153,11 +153,14 @@ class TitleScene(OverlayScene):
         strength = utils.lerp(start, end, self.elapsed_time / duration) + wobble
         return color, strength
 
-    def render(self, surf):
+    def render_bg(self, surf):
         if self.bg_img is not None:
             bg_tinted = sprites.tint(self.bg_img, *self.get_bg_tint())
             surf.blit(bg_tinted, (int(surf.get_width() / 2 - bg_tinted.get_width() / 2),
                                   int(surf.get_height() / 2 - bg_tinted.get_height() / 2)))
+
+    def render(self, surf):
+        self.render_bg(surf)
 
         if self.title_img is not None:
             title_resized = sprites.resize(self.title_img, (None, self.title_img_size), method='smooth')
@@ -295,12 +298,14 @@ class MainMenuScene(OptionMenuScene):
                          overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['small_2x'],
                          overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
 
-        self.options = ['start', 'levels', 'exit']
+        self.options = ['start', 'levels', 'credits', 'exit']
 
     def activate_option(self, opt_name):
         super().activate_option(opt_name)
         if opt_name == 'start':
             self.manager.jump_to_scene(InstructionsMenuScene())
+        elif opt_name == 'credits':
+            self.manager.jump_to_scene(CreditsScene())
         elif opt_name == 'exit':
             self.manager.do_quit()
 
@@ -351,6 +356,87 @@ class InstructionsMenuScene(OptionMenuScene):
                 self.manager.jump_to_scene(MainMenuScene())
             else:
                 self.manager.jump_to_scene(InstructionsMenuScene(self.page - 1))
+
+
+class YouWinMenu(OptionMenuScene):
+
+    INFOS = [
+        "Thanks to your bravery, the crystals were powered, and the kingdom was saved. The Crystal King sends his regards.",
+    ]
+
+    def __init__(self, page=0):
+        super().__init__(options=('continue',), info_text=YouWinMenu.INFOS[page],
+                         title_img=sprites.UiSheet.TITLES['you_win'],
+                         bg_img=sprites.UiSheet.WIN_BG,
+                         overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['thin_2x'],
+                         overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
+        self.page = page
+
+    def activate_option(self, opt_name):
+        if opt_name == 'continue':
+            if self.page >= len(YouWinMenu.INFOS) - 1:
+                self.manager.jump_to_scene(CreditsScene())
+            else:
+                self.manager.jump_to_scene(YouWinMenu(self.page + 1))
+
+
+class CreditsScene(OptionMenuScene):
+
+    INFOS = [
+        "Art, Code, and Design by Ghast",
+
+        "Made in 1 Week for Pygame Community Easter Jam 2023.\nThe theme was 'Particle Overdose'.",
+
+        "(There was no second theme).",
+
+        "Menu titles: cooltext.com\n"
+        "Font: m6x11 by Daniel Linssen\n"
+        "Sounds: sfxr / jfxr\n"
+        "Music: soundraw.io",
+
+        "Made with Pygame",
+
+        "Original Pygame Pride Snek drawing by Kadir. (Pixelized by Ghast).",
+
+        "Thanks for playing!"
+    ]
+
+    def __init__(self, page=0):
+        super().__init__(options=('continue',),
+                         title_img=sprites.UiSheet.TITLES['credits'],
+                         info_text=CreditsScene.INFOS[page],
+                         bg_img=sprites.UiSheet.EMPTY_BG,
+                         overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['thin_2x'],
+                         overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
+        self.page = page
+        self.pg_img = None
+
+    def render(self, surf):
+        if CreditsScene.INFOS[self.page] == "Made with Pygame":
+            self.render_bg(surf)
+
+            pg_img = sprites.Spritesheet.pg_img
+            text = self.get_font(size=16).render(CreditsScene.INFOS[self.page], False, self.get_color(''), None)
+            y_spacing = 8
+
+            tot_h = pg_img.get_height() + text.get_height() + y_spacing
+            img_rect = (int(surf.get_width() / 2 - pg_img.get_width() / 2),
+                        int(surf.get_height() / 2 - tot_h / 2),
+                        pg_img.get_width(),
+                        tot_h)
+            surf.blit(pg_img, img_rect)
+            surf.blit(text, (int(surf.get_width() / 2 - text.get_width() / 2),
+                             img_rect[1] + pg_img.get_height() + y_spacing))
+
+        else:
+            super().render(surf)
+
+    def activate_option(self, opt_name):
+        if opt_name == 'continue':
+            if self.page >= len(CreditsScene.INFOS) - 1:
+                self.manager.jump_to_scene(MainMenuScene())
+            else:
+                self.manager.jump_to_scene(CreditsScene(self.page + 1))
 
 
 class SceneWrapperOptionMenuScene(OptionMenuScene):

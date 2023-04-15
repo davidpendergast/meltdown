@@ -76,6 +76,8 @@ class Spritesheet:
     bar_empty = None
     bar_full = None
 
+    pg_img = None
+
     n_values = 10
     crystals = {}  # (type, value) -> img, base_img
 
@@ -105,6 +107,9 @@ class Spritesheet:
                 crystal_img = img.subsurface([x + 32 * t, y, 32, 32])
                 Spritesheet.crystals[(t, Spritesheet.n_values - i - 1)] = crystal_img, base_img
 
+        pg_img_path = utils.res_path(os.path.join("assets", "pg_pride_64x64_3.png"))
+        Spritesheet.pg_img = sc(pygame.image.load(pg_img_path).convert_alpha(), 2)
+
 
 class UiSheet:
 
@@ -113,6 +118,8 @@ class UiSheet:
 
     MAIN_MENU_BG = None
     EMPTY_BG = None
+    WIN_BG = None
+
     TITLES = {}
 
     @staticmethod
@@ -136,6 +143,7 @@ class UiSheet:
 
         UiSheet.MAIN_MENU_BG = pygame.image.load(os.path.join(asset_dir, "main_menu_bg.png")).convert_alpha()
         UiSheet.EMPTY_BG = pygame.image.load(os.path.join(asset_dir, "empty_bg.png")).convert_alpha()
+        UiSheet.WIN_BG = pygame.image.load(os.path.join(asset_dir, "crystal_king_bg.png")).convert_alpha()
 
         for filename in os.listdir(os.path.join(asset_dir, "titles")):
             if filename.endswith(".png"):

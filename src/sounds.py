@@ -11,6 +11,8 @@ _DID_INIT = False
 _SOUND_DIR = None
 _SOUND_EFFECTS = {}
 
+_PLAYING_SONG = None
+
 
 def initialize(sound_dir):
     global _DID_INIT, _SOUND_DIR
@@ -48,9 +50,14 @@ def play_sound(sound_id, volume=1):
 
 
 def play_song(filepath, volume=1):
-    try:
-        pygame.mixer.music.load(filepath)
-        pygame.mixer.music.set_volume(volume)
-        pygame.mixer.music.play(loops=-1)
-    except Exception:
-        traceback.print_exc()
+    global _PLAYING_SONG
+    if pygame.mixer.music.get_busy() and _PLAYING_SONG == filepath:
+        return  # already playing
+    else:
+        try:
+            pygame.mixer.music.load(filepath)
+            pygame.mixer.music.set_volume(volume)
+            pygame.mixer.music.play(loops=-1)
+            _PLAYING_SONG = filepath
+        except Exception:
+            traceback.print_exc()

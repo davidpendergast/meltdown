@@ -1,5 +1,7 @@
 import pygame
 
+import traceback
+
 import const
 import src.sprites as sprites
 import src.sounds as sounds
@@ -177,12 +179,13 @@ class OptionMenuScene(TitleScene):
 
     FONT_CACHE = {}  # name, size -> Font
 
-    def __init__(self, options=(), options_size=16, info_text=None, title_img=None, title_y_pos=0.333, bg_img=None,
+    def __init__(self, options=(), options_size=16, option_columns=1, info_text=None, title_img=None, title_y_pos=0.333, bg_img=None,
                  overlay_top_imgs=(), overlay_bottom_imgs=()):
         super().__init__(title_img=title_img, title_y_pos=title_y_pos, bg_img=bg_img,
                          overlay_top_imgs=overlay_top_imgs, overlay_bottom_imgs=overlay_bottom_imgs)
         self.options = options
         self.sel_opt = 0
+        self.columns = option_columns
 
         self._cached_option_renderings = {}  # (text, color) -> Surface
         self._options_size = options_size
@@ -209,7 +212,6 @@ class OptionMenuScene(TitleScene):
         sounds.play_sound(const.MENU_MOVE)
 
     def activate_option(self, opt_name):
-        print(f"Option was activated: {opt_name}")
         sounds.play_sound(const.MENU_SELECT)
 
     def update(self, dt):
@@ -225,6 +227,22 @@ class OptionMenuScene(TitleScene):
                 self.sel_opt = (self.sel_opt + dy) % len(self.options)
                 self.selected_opt(self.options[self.sel_opt])
 
+            dx = 0
+            if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.MOVE_LEFT_KEYS):
+                dx -= 1
+            if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.MOVE_RIGHT_KEYS):
+                dx += 1
+
+            if dx != 0 and len(self.options) > 1 and self.columns > 1:
+                rows, cols = self.get_rows_and_columns()
+                sel_row, sel_col = self.idx_to_row_col(self.sel_opt)
+                new_col = (sel_col + dx) % cols
+                new_idx = self.row_col_to_idx(sel_row, new_col)
+                if new_idx >= len(self.options):
+                    new_idx = len(self.options) - 1
+                self.sel_opt = new_idx
+                self.selected_opt(self.options[self.sel_opt])
+
             if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.ACTION_KEYS):
                 sel_name = self.options[self.sel_opt]
                 if self.opt_enabled(sel_name):
@@ -233,7 +251,9 @@ class OptionMenuScene(TitleScene):
                     sounds.play_sound('error')
 
         if pygame.K_ESCAPE in const.KEYS_PRESSED_THIS_FRAME:
-            if 'back' in self.options and self.opt_enabled('back'):
+            if 'continue' in self.options and self.opt_enabled('continue'):
+                self.activate_option('continue')
+            elif 'back' in self.options and self.opt_enabled('back'):
                 self.activate_option('back')
             elif 'exit' in self.options and self.opt_enabled('exit'):
                 self.activate_option('exit')
@@ -255,6 +275,16 @@ class OptionMenuScene(TitleScene):
         if key not in self._cached_option_renderings:
             self._cached_option_renderings[key] = self.get_font(size=self._options_size).render(opt_name, False, color)
         return self._cached_option_renderings[key]
+
+    def get_rows_and_columns(self):
+        return math.ceil(len(self.options) / self.columns), self.columns
+
+    def row_col_to_idx(self, row, col):
+        return row + col * self.get_rows_and_columns()[0]
+
+    def idx_to_row_col(self, idx):
+        rows, _ = self.get_rows_and_columns()
+        return idx % rows, idx // rows
 
     def get_options_render_offs(self, surf, size, min_y):
         x = int(surf.get_width() / 2 - size[0] / 2)
@@ -279,16 +309,17 @@ class OptionMenuScene(TitleScene):
             y += self.cached_info_text_rendering[key].get_height()
 
         option_renders = [self.render_option(opt_name) for opt_name in self.options]
-        h = sum((s.get_height() for s in option_renders), start=0)
-        w = max((s.get_width() for s in option_renders), default=0)
-        rect = [*self.get_options_render_offs(surf, (w, h), min_y=y), w, h]
 
-        y = 0
-        for opt_img in option_renders:
-            x = int(rect[0] + rect[2] / 2 - opt_img.get_width() / 2)
-            surf.blit(opt_img, (x, y + rect[1]))
-            y += opt_img.get_height()
+        rows, cols = self.get_rows_and_columns()
+        max_h = max((s.get_height() for s in option_renders), default=0)
+        max_w = max((s.get_width() for s in option_renders), default=0)
+        rect = [*self.get_options_render_offs(surf, (max_w * cols, max_h * rows), min_y=y), max_w * cols, max_h * rows]
 
+        for idx, opt_img in enumerate(option_renders):
+            row, col = self.idx_to_row_col(idx)
+            x = col * max_w + int(rect[0] + max_w / 2 - opt_img.get_width() / 2)
+            y = row * max_h + int(rect[1] + max_h / 2 - opt_img.get_height() / 2)
+            surf.blit(opt_img, (x, y))
 
 class MainMenuScene(OptionMenuScene):
 
@@ -306,8 +337,8 @@ class MainMenuScene(OptionMenuScene):
             self.manager.jump_to_scene(InstructionsMenuScene())
         elif opt_name == 'credits':
             self.manager.jump_to_scene(CreditsScene())
-        elif opt_name == 'levels' and const.IS_DEV:
-            self.manager.jump_to_scene(YouWinMenu())
+        elif opt_name == 'levels':
+            self.manager.jump_to_scene(LevelSelectScene())
         elif opt_name == 'exit':
             self.manager.do_quit()
 
@@ -332,7 +363,9 @@ class InstructionsMenuScene(OptionMenuScene):
         "Your radiation level is shown in a bar at the bottom of the screen. "
         "Crystals' radiation levels are shown in bars as well.",
 
-        "Remember that you can drag objects using [Space] or [Enter]!"
+        "Particles lose energy when they bounce off movable walls, but not static ones.",
+
+        "Good luck! Remember that you can drag objects using [Space] or [Enter]."
     ]
 
     def __init__(self, page=0):
@@ -373,12 +406,23 @@ class YouWinMenu(OptionMenuScene):
         "<show king>",
         "\"The Crystal King sends his regards\"",
         "It vanishes into the night.",
+        "<show stats>",
     ]
 
     def __init__(self, page=0):
-        super().__init__(options=('continue',), info_text=YouWinMenu.INFOS[page],
+        msg = YouWinMenu.INFOS[page]
+        if msg == "<show stats>":
+            total_secs = round(const.SAVE_DATA['time'])
+            mins = (total_secs // 60) % 60
+            secs = total_secs - mins * 60
+            time_str = f"{mins}:{str(secs).zfill(2)}"
+            msg = f"Thanks for playing!\n" \
+                  f"Deaths: {const.SAVE_DATA['deaths']}\n" \
+                  f"Playtime: {time_str}"
+        super().__init__(options=('continue',),
+                         info_text=msg,
                          title_img=sprites.UiSheet.TITLES['you_win'],
-                         bg_img=sprites.UiSheet.WIN_BG if YouWinMenu.INFOS[page] == "<show king>" else sprites.UiSheet.EMPTY_BG,
+                         bg_img=sprites.UiSheet.WIN_BG if msg == "<show king>" else sprites.UiSheet.EMPTY_BG,
                          overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['thin_2x'],
                          overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
         self.page = page
@@ -395,6 +439,7 @@ class YouWinMenu(OptionMenuScene):
             super().render(surf)
 
     def activate_option(self, opt_name):
+        super().activate_option(opt_name)
         if opt_name == 'continue':
             if self.page >= len(YouWinMenu.INFOS) - 1:
                 self.manager.jump_to_scene(CreditsScene())
@@ -405,8 +450,6 @@ class YouWinMenu(OptionMenuScene):
 class CreditsScene(OptionMenuScene):
 
     INFOS = [
-        "Thanks for playing!",
-
         "Art, Code, and Design by Ghast",
 
         "Made in 1 Week for Pygame Community Easter Jam 2023.\nThe theme was 'Particle Overdose'.",
@@ -454,6 +497,7 @@ class CreditsScene(OptionMenuScene):
             super().render(surf)
 
     def activate_option(self, opt_name):
+        super().activate_option(opt_name)
         if opt_name == 'continue':
             if self.page >= len(CreditsScene.INFOS) - 1:
                 self.manager.jump_to_scene(MainMenuScene())
@@ -461,19 +505,62 @@ class CreditsScene(OptionMenuScene):
                 self.manager.jump_to_scene(CreditsScene(self.page + 1))
 
 
+class LevelSelectScene(OptionMenuScene):
+
+    def __init__(self):
+        import src.gameplay as gameplay
+        opts = []
+        prev_level_name = None
+        for idx, lvl_file in enumerate(gameplay.LEVELS):
+            lvl_name = gameplay.level_file_to_name(lvl_file)
+            n = idx + 1
+            if prev_level_name is None or prev_level_name in const.SAVE_DATA['beaten_levels']:
+                opts.append(f"{n}. {lvl_name}")
+            else:
+                opts.append(f"{n}. ???")
+            prev_level_name = lvl_name
+        opts.append('back')
+
+        super().__init__(options=opts,
+                         option_columns=2,
+                         title_img=(sprites.UiSheet.TITLES['level_select'], 32),
+                         bg_img=sprites.UiSheet.EMPTY_BG,
+                         overlay_top_imgs=sprites.UiSheet.OVERLAY_TOPS['thin_2x'],
+                         overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
+
+    def opt_enabled(self, opt_name):
+        return "???" not in opt_name
+
+    def activate_option(self, opt_name):
+        super().activate_option(opt_name)
+
+        if opt_name == 'back':
+            self.manager.jump_to_scene(MainMenuScene())
+        elif self.opt_enabled(opt_name):
+            try:
+                dot_idx = opt_name.index(".")
+                n = int(opt_name[:dot_idx]) - 1
+                import src.gameplay as gameplay
+                self.manager.jump_to_scene(gameplay.GameplayScene(n))
+            except Exception:
+                print(f"ERROR: failed to activate level: {opt_name}")
+                traceback.print_exc()
+
 class SceneWrapperOptionMenuScene(OptionMenuScene):
 
-    def __init__(self, inner_scene: Scene, options=(), options_size=16, info_text=None, title_img=None, title_y_pos=0.333):
+    def __init__(self, inner_scene: Scene, update_inner=True, options=(), options_size=16, info_text=None, title_img=None, title_y_pos=0.333):
         super().__init__(options=options, options_size=options_size, info_text=info_text,
                          title_img=title_img, title_y_pos=title_y_pos)
         self.inner_scene = inner_scene
         self.overlay_img: pygame.Surface = None
         self.max_overlay_alpha = 0.666
         self.max_overlay_alpha_delay = 0.5
+        self.update_inner = update_inner
 
     def update(self, dt):
         super().update(dt)
-        self.inner_scene.update(dt)
+        if self.update_inner:
+            self.inner_scene.update(dt)
 
     def get_overlay_alpha(self):
         return self.max_overlay_alpha * min(1.0, self.elapsed_time / self.max_overlay_alpha_delay)

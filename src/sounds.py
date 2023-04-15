@@ -41,8 +41,6 @@ def play_sound(sound_id, volume=1):
                 as_sound = pygame.mixer.Sound(choice)
                 _SOUND_EFFECTS[sound_id][idx] = as_sound
                 choice = as_sound
-            if const.IS_DEV:
-                print(f"DEBUG: Playing sound: {sound_id} ({idx})")
             choice.set_volume(volume)
             choice.play()
         else:

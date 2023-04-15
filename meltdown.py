@@ -121,6 +121,8 @@ class ParticleArray:
 if __name__ == "__main__":
     pygame.init()
     pygame.font.init()
+
+    const.load_data_from_disk()
     
     screen = utils.make_fancy_scaled_display(
         const.SCREEN_DIMS,
@@ -151,6 +153,7 @@ if __name__ == "__main__":
         const.KEYS_RELEASED_THIS_FRAME.clear()
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
+                const.save_data_to_disk()
                 running = False
             elif e.type == pygame.KEYDOWN:
                 const.KEYS_PRESSED_THIS_FRAME.add(e.key)
@@ -177,6 +180,7 @@ if __name__ == "__main__":
             pygame.display.set_caption(caption)
 
         dt = clock.tick(const.MAX_FPS) / 1000
+        const.SAVE_DATA['time'] += dt  # add real time
         dt = min(dt, 1 / const.MIN_FPS)
 
         frm_cnt += 1

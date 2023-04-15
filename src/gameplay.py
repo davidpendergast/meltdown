@@ -16,6 +16,9 @@ from src.sprites import Spritesheet, UiSheet
 
 LEVELS = []  # loaded from level_list.txt
 
+def level_file_to_name(lvl_file):
+    return lvl_file[:-4].title()
+
 
 def initialize_level_list(filepath):
     with open(filepath) as f:
@@ -35,7 +38,7 @@ class GameplayScene(scenes.OverlayScene):
         super().__init__(overlay_top_imgs=UiSheet.OVERLAY_TOPS["thin"],
                          overlay_bottom_imgs=UiSheet.OVERLAY_BOTTOMS["thick"])
         self.n = n  # level number
-        self.level_name = LEVELS[n][:-4]
+        self.level_name = level_file_to_name(LEVELS[n])
 
         filepath = utils.res_path(os.path.join(const.LEVEL_DIR, LEVELS[n]))
         self.level = Level.load_level_from_file(self, filepath)
@@ -52,8 +55,14 @@ class GameplayScene(scenes.OverlayScene):
 
     def update(self, dt):
         super().update(dt)
+
         if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.RESTART_KEYS, cond=self.is_active()):
             self.manager.jump_to_scene(GameplayScene(self.n))
+
+        # pausing
+        if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.ESCAPE_KEYS, cond=self.is_active()):
+            self.manager.jump_to_scene(PauseScene(self))
+            sounds.play_sound('menu_select')
 
         # debug level skipping
         if const.IS_DEV and const.has_keys(const.KEYS_HELD_THIS_FRAME, (pygame.K_LSHIFT,), cond=self.is_active()):
@@ -67,17 +76,20 @@ class GameplayScene(scenes.OverlayScene):
 
         self.level.update(dt)
 
-        # player died
         if self.is_active():
+            # player died
             if self.level.player is None:
                 self.no_player_timer += dt
                 if self.no_player_timer >= self.spawn_death_menu_delay:
                     self.manager.jump_to_scene(YouDiedScene(self))
+                    # deaths already counted in player class
 
             crystals = [ent for ent in self.level.all_entities() if isinstance(ent, CrystalEntity)]
             if len(crystals) == 0 or all(cry.is_fully_charged() for cry in crystals):
                 self.crystals_satisfied_timer += dt
                 if self.crystals_satisfied_timer >= self.level_win_delay:
+                    const.SAVE_DATA['beaten_levels'].append(self.level_name)
+                    const.save_data_to_disk()
                     self.manager.jump_to_scene(SuccessScene(self))
             else:
                 self.crystals_satisfied_timer = max(0, self.crystals_satisfied_timer - dt)
@@ -172,6 +184,38 @@ def render_box2d_world(surf, world: Box2D.b2World, camera_rect):
     for body in world.bodies:
         draw_body(surf, body, camera_rect)
 
+
+class PauseScene(scenes.SceneWrapperOptionMenuScene):
+
+    def __init__(self, inner_scene: GameplayScene):
+        msg = f"Level {inner_scene.n + 1}: {inner_scene.level_name}"
+        super().__init__(inner_scene,
+                         update_inner=False,
+                         options=('continue', 'retry', 'exit'),
+                         info_text=msg,
+                         title_img=UiSheet.TITLES["paused"])
+
+    def do_continue(self):
+        self.manager.jump_to_scene(self.inner_scene)
+
+    def do_retry(self):
+        if isinstance(self.inner_scene, GameplayScene):
+            self.manager.jump_to_scene(GameplayScene(self.inner_scene.n))
+
+    def render(self, surf, skip=False):
+        self.inner_scene.render(surf, draw_world=True, draw_overlays=False, draw_dose_bar=True)
+        self.render_overlay(surf)
+        self.inner_scene.render(surf, draw_world=False, draw_overlays=True, draw_dose_bar=False)
+        super().render(surf, skip=True)
+
+    def activate_option(self, opt_name):
+        super().activate_option(opt_name)
+        if opt_name == 'continue':
+            self.do_continue()
+        elif opt_name == 'retry':
+            self.do_retry()
+        elif opt_name == 'exit':
+            self.manager.jump_to_scene(scenes.MainMenuScene())
 
 class YouDiedScene(scenes.SceneWrapperOptionMenuScene):
 
@@ -562,10 +606,12 @@ class CrystalEntity(ParticleAbsorber):
         if not was_full and self.get_energy_pcnt() >= 1:
             level.add_entity(AnimationEntity(self.get_center(), duration=0.5))
             sounds.play_sound('random')
+        elif was_full and self.get_energy_pcnt() < 1:
+            sounds.play_sound("synth")
 
     def render(self, surf):
         cx, cy = self.get_center_xy_on_screen()
-        fill_level = int(self.get_energy_pcnt() * Spritesheet.n_values - 0.0001)
+        fill_level = int(self.get_energy_pcnt() * (Spritesheet.n_values - 1))
         spr, base_spr = Spritesheet.crystals[(self.crystal_type, fill_level)]
 
         surf.blit(base_spr, (cx - base_spr.get_width() // 2, cy - int(8 * base_spr.get_height() / 19)))
@@ -713,6 +759,7 @@ class Player(ParticleAbsorber):
             self.grab_joint = None  # this ref can segfault after the removal
             level.remove_entity(self)
             sounds.play_sound('explosion')
+            const.SAVE_DATA['deaths'] += 1
 
     def build_box2d_obj(self, world) -> Box2D.b2Body:
         radius = math.sqrt((self.dims[0] / 2)**2 + (self.dims[1] / 2)**2)

@@ -1,6 +1,9 @@
 import os
+import traceback
+
 import src.readme_writer as readme_writer
 import pygame
+import json
 
 IS_DEV = os.path.exists(".gitignore")
 if IS_DEV:
@@ -35,6 +38,41 @@ KEYS_HELD_THIS_FRAME = set()
 KEYS_PRESSED_THIS_FRAME = set()
 KEYS_RELEASED_THIS_FRAME = set()
 
+SAVE_DATA = {}
+SAVE_DATA_FILEPATH = "userdata.json"
+
+def load_data_from_disk():
+    SAVE_DATA.clear()
+    SAVE_DATA['beaten_levels'] = []
+    SAVE_DATA['deaths'] = 0
+    SAVE_DATA['time'] = 0
+
+    try:
+        print(f"INFO: loading data from: {SAVE_DATA_FILEPATH}")
+        if os.path.exists(SAVE_DATA_FILEPATH):
+            with open(SAVE_DATA_FILEPATH, 'r') as json_file:
+                blob = json.load(json_file)
+                if 'beaten_levels' in blob:
+                    for level_name in blob['beaten_levels']:
+                        SAVE_DATA['beaten_levels'].append(str(level_name))
+                if 'deaths' in blob:
+                    SAVE_DATA['deaths'] += int(blob['deaths'])
+                if 'time' in blob:
+                    SAVE_DATA['time'] += float(blob['time'])
+        else:
+            print("INFO: No save data found, fresh launch.")
+    except Exception:
+        print("ERROR: Failed to load save data.")
+        traceback.print_exc()
+
+def save_data_to_disk():
+    try:
+        print(f"INFO: saving data to: {SAVE_DATA_FILEPATH}")
+        with open(SAVE_DATA_FILEPATH, "w") as outfile:
+            json.dump(SAVE_DATA, outfile)
+    except Exception:
+        print("ERROR: Failed to save data.")
+        traceback.print_exc()
 
 def has_keys(key_set, keys, cond=True):
     if not cond:

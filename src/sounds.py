@@ -6,6 +6,7 @@ import glob
 import random
 
 import const
+import src.utils as utils
 
 _DID_INIT = False
 _SOUND_DIR = None
@@ -29,10 +30,10 @@ def play_sound(sound_id, volume=1):
     if _DID_INIT:
         if sound_id not in _SOUND_EFFECTS:
             _SOUND_EFFECTS[sound_id] = []
-            os.listdir(f"{_SOUND_DIR}")
-            for filename in os.listdir(f"{_SOUND_DIR}"):
+            sound_dir = utils.res_path(f"{_SOUND_DIR}")
+            for filename in os.listdir(sound_dir):
                 if filename.startswith(sound_id) and filename.endswith(('.wav', '.ogg')):
-                    _SOUND_EFFECTS[sound_id].append(os.path.join(_SOUND_DIR, filename))
+                    _SOUND_EFFECTS[sound_id].append(os.path.join(sound_dir, filename))
 
         if len(_SOUND_EFFECTS[sound_id]) > 0:
             idx = int(random.random() * len(_SOUND_EFFECTS[sound_id]))

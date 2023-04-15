@@ -132,7 +132,7 @@ if __name__ == "__main__":
     pygame.display.set_caption(const.GAME_TITLE)
 
     sounds.initialize(const.SOUND_DIR)
-    gameplay.initialize_level_list(utils.res_path("levels/level_list.txt"))
+    gameplay.initialize_level_list("levels/level_list.txt")
 
     rad_surf = pygame.Surface(const.DIMS)
 

@@ -411,7 +411,7 @@ class ParticleEntity(Entity):
             level.remove_entity(self)
 
     def get_color(self):
-        return tint(const.RADIATION_COLOR, (0, 0, 0), 0.666 * (1 - (self.energy / const.PARTICLE_ENERGY)))
+        return tint(const.RADIATION_COLOR, (0, 0, 0), 0.666 * (1 - max(0, min(1, (self.energy / const.PARTICLE_ENERGY)))))
 
     def render(self, surf):
         cx, cy = self.get_center_xy_on_screen()
@@ -423,6 +423,7 @@ class ParticleEmitter(Entity):
     def __init__(self, xy, dims=(3, 3), weight=1):
         super().__init__(xy=(xy[0] - dims[0] / 2, xy[1] - dims[1] / 2), dims=dims)
         self.weight = weight
+        self.energy_mult = 1
         self.accum_t = 0
         self.cur_rate = 1
 
@@ -432,8 +433,9 @@ class ParticleEmitter(Entity):
         n_to_spawn = int(self.cur_rate * self.accum_t)
         self.accum_t -= n_to_spawn / self.cur_rate
 
-        for _ in range(n_to_spawn):
-            self.spawn_particle(level)
+        energy = const.PARTICLE_ENERGY * self.energy_mult
+
+        self.spawn_particle(level, n=n_to_spawn, energy=energy)
 
     def get_sprite(self):
         return Spritesheet.barrel
@@ -451,15 +453,15 @@ class ParticleEmitter(Entity):
                                         category_bits=const.EMITTER_CATEGORY, mask_bits=const.SOLID_OBJECTS,
                                         group_index=const.PARTICLE_GROUP)
 
-    def spawn_particle(self, level: 'Level', n=1):
+    def spawn_particle(self, level: 'Level', n=1, energy=const.PARTICLE_ENERGY):
         c_xy = self.get_center()
         for _ in range(n):
-            level.add_entity(ParticleEntity(c_xy))
+            level.add_entity(ParticleEntity(c_xy, energy=energy))
 
 
 class LaserEntity(ParticleEmitter):
 
-    def __init__(self, xy, direction, perturb=0.01, dims=(3, 3), weight=0.333):
+    def __init__(self, xy, direction, perturb=0.01, dims=(3, 3), weight=1):
         super().__init__(xy, dims=dims, weight=weight)
         self.angle = pygame.Vector2(direction).as_polar()[1] / 360 * math.pi * 2
         self.perturb = perturb
@@ -467,12 +469,12 @@ class LaserEntity(ParticleEmitter):
     def get_sprite(self):
         return Spritesheet.laser
 
-    def spawn_particle(self, level: 'Level', n=1):
+    def spawn_particle(self, level: 'Level', n=1, energy=const.PARTICLE_ENERGY):
         c_xy = self.get_center()
         for _ in range(n):
             new_angle = self.angle + 2 * (random.random() - 0.5) * self.perturb
             new_dir = (math.cos(new_angle), math.sin(new_angle))
-            level.add_entity(ParticleEntity(c_xy, direction=new_dir))
+            level.add_entity(ParticleEntity(c_xy, direction=new_dir, energy=energy))
 
 
 class ParticleAbsorber(Entity):
@@ -482,10 +484,11 @@ class ParticleAbsorber(Entity):
         self.energy_accum = 0
         self.energy_limit = energy_limit
         self.energy_overfill_limit = 1.333
+        self.absorb_rate = const.ENERGY_TRANSFER_ON_COLLISION
         self.decay_rate = const.AMBIENT_ENERGY_DECAY_RATE
 
     def absorb_particle(self, p_ent: ParticleEntity):
-        to_absorb = p_ent.energy * const.ENERGY_TRANSFER_ON_COLLISION
+        to_absorb = p_ent.energy * self.absorb_rate
         p_ent.energy -= to_absorb
         self.energy_accum += to_absorb
 
@@ -515,6 +518,7 @@ class CrystalEntity(ParticleAbsorber):
     def __init__(self, xy, crystal_type=-1, energy_limit=const.CRYSTAL_LIMIT, **kwargs):
         super().__init__(xy=xy, dims=(3, 3), energy_limit=energy_limit, **kwargs)
         self.crystal_type = int(3 * random.random()) if crystal_type < 0 else crystal_type
+        self.absorb_rate *= 1.0
 
     def is_fully_charged(self):
         return self.get_energy_pcnt() >= 1.0
@@ -795,6 +799,7 @@ class Level:
         total_weight = sum((emit.weight for emit in emitters), start=0)
         for emitter in emitters:
             emitter.cur_rate = self.spawn_rate * emitter.weight / total_weight
+            emitter.energy_mult = len(emitters)
 
     def add_entity(self, ent, immediately=False):
         if immediately:

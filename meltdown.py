@@ -12,6 +12,7 @@ import src.utils as utils
 import src.convexhull2 as convexhull
 import src.sounds as sounds
 import src.scenes as scenes
+import src.gameplay as gameplay
 from src.sprites import Spritesheet, UiSheet
 
 
@@ -129,6 +130,7 @@ if __name__ == "__main__":
     pygame.display.set_caption(const.GAME_TITLE)
 
     sounds.initialize(const.SOUND_DIR)
+    gameplay.initialize_level_list(utils.res_path("levels/level_list.txt"))
 
     rad_surf = pygame.Surface(const.DIMS)
 

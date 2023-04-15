@@ -13,7 +13,18 @@ import src.sounds as sounds
 import src.scenes as scenes
 from src.sprites import Spritesheet, UiSheet
 
-LEVELS = ["laser.png", "test.png"]
+
+LEVELS = []  # loaded from level_list.txt
+
+
+def initialize_level_list(filepath):
+    with open(filepath) as f:
+        lines = f.readlines()
+        LEVELS.clear()
+        for name in lines:
+            name = name.strip()
+            if name.endswith(".png") and not name.startswith("#"):
+                LEVELS.append(name)
 
 
 class GameplayScene(scenes.OverlayScene):
@@ -623,23 +634,37 @@ class Player(ParticleAbsorber):
 
         if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.ACTION_KEYS, cond=scene_is_active) or \
                 (const.has_keys(const.KEYS_HELD_THIS_FRAME, const.ACTION_KEYS, cond=scene_is_active) and self.grab_joint is None):
-            grab_pt = pygame.Vector2(self.get_center()) + pygame.Vector2(self.last_dir).normalize() * (self.grab_reach + self.dims[0] / 2)
-            fix = [f for f in all_fixtures_at_point(level.world, grab_pt)
-                   if not isinstance(f.body.userData['entity'], ParticleEntity)]
+
+            center_xy = pygame.Vector2(self.get_center())
+            grab_vec = pygame.Vector2(self.last_dir).normalize() * (self.grab_reach + self.dims[0] / 2)
+            grab_pts = [
+                center_xy + grab_vec,
+                center_xy + grab_vec.rotate(45),
+                center_xy + grab_vec.rotate(-45),
+            ]
+
             if self.grab_joint is not None:
+                # this is possible if you press the grab key while
+                # you have an active ghost key-hold happening.
                 level.world.DestroyJoint(self.grab_joint)
                 self.grab_joint = None
-            if len(fix) > 0:
-                c_xy = (i * const.BOX2D_SCALE_FACTOR for i in self.get_center())
-                o_xy = (i * const.BOX2D_SCALE_FACTOR for i in grab_pt)
-                self.grab_joint = level.world.CreateDistanceJoint(
-                    bodyA=self.body,
-                    bodyB=fix[0].body,  # TODO calc best fixt to grab
-                    anchorA=Box2D.b2Vec2(*c_xy),
-                    anchorB=Box2D.b2Vec2(*o_xy),
-                    collideConnected=True)
-                level.add_entity(AnimationEntity(grab_pt, color=(225, 225, 225), radius=8, duration=0.25))
-                sounds.play_sound('click')
+
+            for grab_pt in grab_pts:
+                # important we don't grab particles or anything that might get deleted
+                fix = [f for f in all_fixtures_at_point(level.world, grab_pt)
+                       if not isinstance(f.body.userData['entity'], ParticleEntity)]
+                if len(fix) > 0:
+                    c_xy = (i * const.BOX2D_SCALE_FACTOR for i in self.get_center())
+                    o_xy = (i * const.BOX2D_SCALE_FACTOR for i in grab_pt)
+                    self.grab_joint = level.world.CreateDistanceJoint(
+                        bodyA=self.body,
+                        bodyB=fix[0].body,
+                        anchorA=Box2D.b2Vec2(*c_xy),
+                        anchorB=Box2D.b2Vec2(*o_xy),
+                        collideConnected=True)
+                    level.add_entity(AnimationEntity(grab_pt, color=(225, 225, 225), radius=8, duration=0.25))
+                    sounds.play_sound('menu_select')
+                    break
         elif const.has_keys(const.KEYS_RELEASED_THIS_FRAME, const.ACTION_KEYS, cond=scene_is_active):
             if self.grab_joint is not None:
                 level.world.DestroyJoint(self.grab_joint)

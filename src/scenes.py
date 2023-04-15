@@ -323,12 +323,16 @@ class InstructionsMenuScene(OptionMenuScene):
         "Fully charge all crystals at the same time to win.",
 
         "[WASD] or Arrows to Move\n"
-        "[Space] to grab objects\n"
-        "[R] to Restart\n"
-        "[Esc] to Pause",
+        "[Space] or [Enter] to Grab objects\n"
+        "[R] to Restart",
 
         "If you absorb too much radiation too quickly, you'll die. "
-        "Absorbed radiation diminishes gradually over time (in all objects)."
+        "Absorbed radiation diminishes gradually over time (in all objects).",
+
+        "Your radiation level is shown in a bar at the bottom of the screen. "
+        "Crystals' radiation levels are shown in bars as well.",
+
+        "Remember that you can drag objects using [Space] or [Enter]!"
     ]
 
     def __init__(self, page=0):
@@ -363,10 +367,12 @@ class InstructionsMenuScene(OptionMenuScene):
 class YouWinMenu(OptionMenuScene):
 
     INFOS = [
-        "Thanks to your bravery, the crystals were powered and the crisis was averted.",
-        "...?",
+        "The crystals hum and glow, safely containing the radiation.",
+        "Thanks to your bravery, the crisis was averted.",
+        "Suddenly, the crystals around you begin to shift, gathering into a large mass. A figure emerges.",
         "<show king>",
-        "The Crystal King sends his regards."
+        "\"The Crystal King sends his regards\"",
+        "It vanishes into the night.",
     ]
 
     def __init__(self, page=0):
@@ -395,6 +401,8 @@ class YouWinMenu(OptionMenuScene):
 class CreditsScene(OptionMenuScene):
 
     INFOS = [
+        "Thanks for playing!",
+
         "Art, Code, and Design by Ghast",
 
         "Made in 1 Week for Pygame Community Easter Jam 2023.\nThe theme was 'Particle Overdose'.",
@@ -409,8 +417,6 @@ class CreditsScene(OptionMenuScene):
         "Made with Pygame",
 
         "Original Pygame Pride Snek drawing by Kadir. (Pixelized by Ghast).",
-
-        "Thanks for playing!"
     ]
 
     def __init__(self, page=0):

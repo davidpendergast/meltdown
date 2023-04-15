@@ -22,8 +22,10 @@ def initialize_level_list(filepath):
         lines = f.readlines()
         LEVELS.clear()
         for name in lines:
+            if "#" in name:
+                name = name[0:name.index("#")]
             name = name.strip()
-            if name.endswith(".png") and not name.startswith("#"):
+            if name.endswith(".png"):
                 LEVELS.append(name)
 
 
@@ -60,6 +62,9 @@ class GameplayScene(scenes.OverlayScene):
             elif const.has_keys(const.KEYS_PRESSED_THIS_FRAME, (pygame.K_RIGHT,)) and self.n < len(LEVELS) - 1:
                 self.manager.jump_to_scene(GameplayScene(self.n + 1))  # go forward a level
 
+        if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, (pygame.K_p,)):
+            const.CUR_PARTICLE_SIZE_IDX = (const.CUR_PARTICLE_SIZE_IDX + 1) % len(const.PARTICLE_SIZES)
+
         self.level.update(dt)
 
         # player died
@@ -78,10 +83,12 @@ class GameplayScene(scenes.OverlayScene):
                 self.crystals_satisfied_timer = max(0, self.crystals_satisfied_timer - dt)
 
     def render(self, screen: pygame.Surface, draw_world=True, draw_overlays=True, draw_dose_bar=True):
+        level_area = [self.insets[0],
+                      self.insets[1],
+                      screen.get_width() - (self.insets[0] + self.insets[2]),
+                      screen.get_height() - (self.insets[1] + self.insets[3])]
         if pygame.K_b in const.KEYS_HELD_THIS_FRAME:
-            level_screen_rect = (0, 0, const.DIMS[0] * const.DISPLAY_SCALE_FACTOR,
-                                 const.DIMS[1] * const.DISPLAY_SCALE_FACTOR)
-            render_box2d_world(screen.subsurface(level_screen_rect), self.level.world,
+            render_box2d_world(screen.subsurface(level_area), self.level.world,
                                [0, 0, const.DIMS[0] * const.BOX2D_SCALE_FACTOR,
                                 const.DIMS[1] * const.BOX2D_SCALE_FACTOR])
         else:
@@ -89,10 +96,6 @@ class GameplayScene(scenes.OverlayScene):
                 self.level_buf.fill(self.get_bg_color())
                 self.level.render_entities(self.level_buf)
 
-                level_area = [self.insets[0],
-                              self.insets[1],
-                              screen.get_width() - (self.insets[0] + self.insets[2]),
-                              screen.get_height() - (self.insets[1] + self.insets[3])]
                 screen.blit(self.level_buf, (level_area[0] + int(level_area[2] / 2 - self.level_buf.get_width() / 2),
                                              level_area[1] + int(level_area[3] / 2 - self.level_buf.get_height() / 2)))
 
@@ -415,7 +418,12 @@ class ParticleEntity(Entity):
 
     def render(self, surf):
         cx, cy = self.get_center_xy_on_screen()
-        surf.set_at((int(cx), int(cy) - const.WALL_HEIGHT // 2), self.get_color())
+        r = const.PARTICLE_SIZES[const.CUR_PARTICLE_SIZE_IDX]
+        pos = (round(cx), round(cy - const.WALL_HEIGHT / 2))
+        if r >= 1:
+            pygame.draw.circle(surf, self.get_color(), pos, r)
+        else:
+            surf.set_at(pos, self.get_color())
 
 
 class ParticleEmitter(Entity):

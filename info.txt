@@ -1,32 +1,32 @@
 
- ----------
-  Meltdown
- ----------
- 
- 
- By Ghast.
- 
- This is a geometric puzzle game / bullet hell about radiation.
- 
- Power the crystals to win!
- 
- 
- Controls:
-   [WASD] or Arrows to Move.
-   [Space] or [Enter] to grab and drag objects.
-   [R] to Restart.
-   [Esc] to Pause.
-   
- Credits:
-   Art, Code, and Design by Ghast
-   
-   Menu titles generated using cooltext.com
-   Font: m6x11 by Daniel Linssen
-   Sound effects generated using sfxr / jfxr
-   Music generated using soundraw.io
+----------
+ Meltdown
+----------
 
-Made in 1 Week for Pygame Community Easter Jam 2023.\nThe theme was 'Particle Overdose'.
-Made with Pygame",
+By Ghast.
+
+This is a geometric puzzle game / bullet hell about radiation.
+
+Power the crystals to win!
+
+Controls:
+  [WASD] or Arrows to Move.
+  [Space] or [Enter] to grab and drag objects.
+  [R] to Restart.
+  [Esc] to Pause.
+  
+Credits:
+  Art, Code, and Design by Ghast
+  
+  Menu titles generated using cooltext.com
+  Font: m6x11 by Daniel Linssen
+  Sound effects generated using sfxr / jfxr
+  Music generated using soundraw.io
+
+Made in 1 Week for Pygame Community Easter Jam 2023.
+The theme was 'Particle Overdose'.
+
+Made with Pygame
 
 Original Pygame Pride Snek drawing by Kadir. (Pixelized by Ghast).
  

@@ -11,3 +11,4 @@ build/*
 *.mp4
 mp4s/*
 logs/*
+userdata.json

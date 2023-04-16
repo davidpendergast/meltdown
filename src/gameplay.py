@@ -40,7 +40,7 @@ class GameplayScene(scenes.OverlayScene):
         self.n = n  # level number
         self.level_name = level_file_to_name(LEVELS[n])
 
-        filepath = utils.res_path(os.path.join(const.LEVEL_DIR, LEVELS[n]))
+        filepath = os.path.join(const.LEVEL_DIR, LEVELS[n])
         self.level = Level.load_level_from_file(self, filepath)
 
         self.level_buf = pygame.Surface((self.level.size[0] * const.DISPLAY_SCALE_FACTOR,
@@ -257,6 +257,7 @@ class SuccessScene(scenes.SceneWrapperOptionMenuScene):
                 self.manager.jump_to_scene(scenes.YouWinMenu())
 
     def activate_option(self, opt_name):
+        super().activate_option(opt_name)
         if opt_name == 'next':
             self.do_next()
 

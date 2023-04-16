@@ -8,7 +8,7 @@ import Box2D
 
 import const as const
 import src.utils as utils
-import src.convexhull2 as convexhull
+import src.convexhull as convexhull
 import src.sounds as sounds
 import src.scenes as scenes
 from src.sprites import Spritesheet, UiSheet
@@ -631,7 +631,7 @@ class WallEntity(Entity):
 
     def __init__(self, poly_list, **kwargs):
         super().__init__(**kwargs)
-        self._poly_list = convexhull.convexHull(poly_list)
+        self._poly_list = convexhull.compute(poly_list)
 
     def __repr__(self):
         return f"{type(self).__name__}({self._poly_list})"
@@ -653,7 +653,7 @@ class WallEntity(Entity):
         base_pts = [self.convert_to_screen_pt(xy) for xy in self.get_pts()]
         top_pts = [(x, y - const.WALL_HEIGHT) for (x, y) in base_pts]
 
-        hull_pts = [pygame.Vector2(xy) for xy in convexhull.convexHull(base_pts + top_pts)]
+        hull_pts = [pygame.Vector2(xy) for xy in convexhull.compute(base_pts + top_pts)]
 
         tnt = self.tint_color
 

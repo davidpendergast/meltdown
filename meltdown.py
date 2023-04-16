@@ -1,4 +1,3 @@
-
 import pygame
 
 import const as const
@@ -6,6 +5,7 @@ import src.utils as utils
 import src.sounds as sounds
 import src.scenes as scenes
 import src.gameplay as gameplay
+
 from src.sprites import Spritesheet, UiSheet
 
 
@@ -30,7 +30,6 @@ if __name__ == "__main__":
     clock = pygame.time.Clock()
     dt = 0
 
-    # level = load_level_from_file("test.png")
     Spritesheet.load(utils.res_path("assets/sprites.png"))
     UiSheet.load(utils.res_path("assets"))
 

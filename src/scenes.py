@@ -321,6 +321,7 @@ class OptionMenuScene(TitleScene):
             y = row * max_h + int(rect[1] + max_h / 2 - opt_img.get_height() / 2)
             surf.blit(opt_img, (x, y))
 
+
 class MainMenuScene(OptionMenuScene):
 
     def __init__(self):
@@ -330,6 +331,14 @@ class MainMenuScene(OptionMenuScene):
                          overlay_bottom_imgs=sprites.UiSheet.OVERLAY_BOTTOMS['thin_2x'])
 
         self.options = ['start', 'levels', 'credits', 'exit']
+
+    def update(self, dt):
+        super().update(dt)
+
+        if const.has_keys(const.KEYS_PRESSED_THIS_FRAME, const.RESTART_KEYS):
+            self.elapsed_time = 0
+            sounds.play_song(None)
+            sounds.play_song(utils.res_path(const.MAIN_SONG))
 
     def activate_option(self, opt_name):
         super().activate_option(opt_name)

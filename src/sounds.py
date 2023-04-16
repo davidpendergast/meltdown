@@ -54,9 +54,14 @@ def play_song(filepath, volume=1):
         return  # already playing
     else:
         try:
-            pygame.mixer.music.load(filepath)
-            pygame.mixer.music.set_volume(volume)
-            pygame.mixer.music.play(loops=-1)
-            _PLAYING_SONG = filepath
+            if filepath is None:
+                if pygame.mixer.music.get_busy():
+                    pygame.mixer.music.stop()
+            else:
+                    pygame.mixer.music.load(filepath)
+                    pygame.mixer.music.set_volume(volume)
+                    pygame.mixer.music.play(loops=-1)
         except Exception:
             traceback.print_exc()
+        finally:
+            _PLAYING_SONG = filepath

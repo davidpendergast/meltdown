@@ -224,8 +224,9 @@ def do_it():
         print("INFO: launching pyinstaller...\n")
 
         # note that this call blocks until the process is finished
-        os.system("py -3.8 -m PyInstaller {} --distpath {} --workpath {}".format(
-            spec_filename, dist_dir_subdir, temp_dir))
+        pyinstaller_cmd = "py -3.8 -m PyInstaller" if OS_SYSTEM_STR == _WINDOWS else "pyinstaller"
+        os.system("{} {} --distpath {} --workpath {}".format(
+            pyinstaller_cmd, spec_filename, dist_dir_subdir, temp_dir))
 
         print("\nINFO: cleaning up {}".format(temp_dir))
 

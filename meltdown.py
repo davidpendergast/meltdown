@@ -9,7 +9,7 @@ import Box2D
 
 import const as const
 import src.utils as utils
-import src.convexhull2 as convexhull
+import src.convexhull as convexhull
 import src.sounds as sounds
 import src.scenes as scenes
 import src.gameplay as gameplay

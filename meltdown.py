@@ -8,6 +8,10 @@ import src.gameplay as gameplay
 
 from src.sprites import Spritesheet, UiSheet
 
+if not getattr(pygame, "IS_CE", False):
+    raise ValueError("This project requires pygame-ce, see https://pypi.org/project/pygame-ce/ "
+                     "(or run `pip install pygame-ce` after `pip uninstall pygame`)")
+
 
 if __name__ == "__main__":
     pygame.init()

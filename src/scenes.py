@@ -421,10 +421,7 @@ class YouWinMenu(OptionMenuScene):
     def __init__(self, page=0):
         msg = YouWinMenu.INFOS[page]
         if msg == "<show stats>":
-            total_secs = round(const.SAVE_DATA['time'])
-            mins = (total_secs // 60) % 60
-            secs = total_secs - mins * 60
-            time_str = f"{mins}:{str(secs).zfill(2)}"
+            time_str = utils.time_to_str(seconds=const.SAVE_DATA['time'], decimals=1)
             msg = f"Thanks for playing!\n" \
                   f"Deaths: {const.SAVE_DATA['deaths']}\n" \
                   f"Playtime: {time_str}"

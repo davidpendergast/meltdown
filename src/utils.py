@@ -1,3 +1,5 @@
+import typing
+
 import pygame
 import pygame._sdl2 as sdl2
 
@@ -111,6 +113,72 @@ def bounding_box(pts):
         min_y = min(y, min_y)
         max_y = max(y, max_y)
     return (min_x, min_y, max_x - min_x, max_y - min_y)
+
+
+def time_to_str(seconds=0., minutes=0., hours=0.,  # NOQA
+                decimals: typing.Union[int, typing.Tuple[int, int]] = (1, 3),
+                show_hours_as_minutes=False) -> str:
+    """Formats a quantity of elapsed time into a human-readable string.
+
+        The format will be one of the following:
+            h:mm:ss[.xxx...]
+               m:ss[.xxx...]
+                  s[.xxx...]
+        Args:
+            decimals: The minimum and maximum number of decimal places to display. If a single number is given,
+                      it will be interpreted as an exact number of decimal places to include.
+            show_hours_as_minutes: If True, the hours places will be shown as minutes, going above 60 if needed.
+    """
+    total_secs = hours * 60 * 60 + minutes * 60 + seconds
+
+    is_neg = total_secs < 0
+    total_secs = abs(total_secs)
+
+    if isinstance(decimals, tuple):
+        min_dec, max_dec = decimals
+    else:
+        min_dec, max_dec = (decimals, decimals)
+
+    frac = total_secs - int(total_secs)
+    if max_dec <= 0:
+        frac_str = ""
+    else:
+        frac_str = '{num:.{prec}f}'.format(num=frac, prec=max_dec)[2:]
+        if len(frac_str) < min_dec:
+            # lengthen the decimal part if it's too short
+            frac_str = frac_str + '0' * (min_dec - len(frac_str))
+        else:
+            # slice off unnecessary trailing zeros
+            while frac_str.endswith('0') and len(frac_str) > min_dec:
+                frac_str = frac_str[:-1]
+    total_secs = int(total_secs)
+
+    s = total_secs % 60
+
+    if not show_hours_as_minutes:
+        m = (total_secs // 60) % 60
+        hr = (total_secs // 3600)
+    else:
+        m = (total_secs // 60)
+        hr = 0
+
+    s2 = f"{s}".zfill(2)  # "2" -> "02"
+    m2 = f"{m}".zfill(2)  # "2" -> "02"
+
+    if hr > 0:
+        res = f"{hr}:{m2}:{s2}"
+    elif m > 0:
+        res = f"{m}:{s2}"
+    else:
+        res = f"{s}"
+
+    if len(frac_str) > 0:
+        res = f"{res}.{frac_str}"
+
+    if is_neg:
+        res = f"-{res}"
+
+    return res
 
 
 # yoinkers from https://stackoverflow.com/a/13790741
